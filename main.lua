@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AS SEA (SAFE DRAG FIX)
+-- W424 HUB | 100 DAYS AT SEA (CLEAN DRAG)
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -9,7 +9,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local AutoDebrisEnabled = false
 
--- Fungsi mencari RemoteFunction secara aman di seluruh game
+-- Fungsi pencari RemoteFunction otomatis yang aman
 local function getRemoteFunction()
     for _, obj in ipairs(game:GetDescendants()) do
         if obj:IsA("RemoteFunction") and obj.Name == "RemoteFunction" then

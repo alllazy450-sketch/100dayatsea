@@ -1,48 +1,48 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FIX POSISI DROP)
+-- W424 HUB | 100 DAYS AT SEA (FINAL FIX)
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local ChatService = game:GetService("Chat")
+local LogService = game:GetService("LogService")
 
 local LocalPlayer = Players.LocalPlayer
-local RemoteFunc = ChatService:WaitForChild("RemoteFunction")
-local RemoteEv = ChatService:WaitForChild("RemoteEvent")
+
+-- Jalur Remote yang valid sesuai temuan log terakhir
+local RemoteEvent = LogService:WaitForChild("RemoteEvent")
+local RemoteFunc = LogService:WaitForChild("RemoteFunction")
 
 local AutoDebrisEnabled = false
 
--- Fungsi Harpoon & Drop yang Lebih Aman (Agar tidak nyangkut di kepala)
 local function grabAndDropDebris(plankItem)
     if not plankItem then return end
     
     pcall(function()
-        -- 1. Berikan Ownership
-        RemoteEv:FireServer(6245093, "GiveUpOwnership", plankItem, "~v0,0,0")
+        -- 1. Berikan Ownership pakai RemoteEvent yang benar
+        RemoteEvent:FireServer(452963, "GiveUpOwnership", plankItem, "~v0,0,0")
         task.wait(0.1)
         
         -- 2. Attempt Drag
         RemoteFunc:InvokeServer(6244486, "AttemptDrag", plankItem)
         task.wait(0.1)
         
-        -- 3. Grab dengan Harpoon
+        -- 3. Grab Harpoon
         RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sGrab", plankItem, "~v0,0,0")
         task.wait(0.3)
         
-        -- 4. Lepaskan Item agak jauh di depan player (Supaya tidak melayang di kepala)
+        -- 4. LetGo agak jauh di depan player agar tidak nyangkut di kepala
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
             local hrp = char.HumanoidRootPart
-            -- Menaruh item 6 stud di depan player dan sedikit lebih rendah
             local dropPos = hrp.Position + (hrp.CFrame.LookVector * 6) - Vector3.new(0, 2, 0)
             local posString = string.format("~v%.4f,%.4f,%.4f", dropPos.X, dropPos.Y, dropPos.Z)
             
             RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sLetGo", plankItem, posString, "~f0,0,0:0,0,0Z0", "~b1")
         end
         
-        -- 5. Tarik kail (Retract)
+        -- 5. Retract
         task.wait(0.1)
         RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sRetract")
     end)
@@ -81,7 +81,7 @@ MainTab:CreateToggle({
     end,
 })
 
--- Loop Auto Farming Debris
+-- Loop Auto Farm
 task.spawn(function()
     while true do
         if AutoDebrisEnabled then
@@ -103,6 +103,6 @@ task.spawn(function()
 end)
 
 MiscTab:CreateSection("Information")
-MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Fix posisi drop agar item tidak nyangkut di kepala."})
+MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Fix jalur LogService RemoteEvent & RemoteFunction."})
 
 Rayfield:LoadConfiguration()

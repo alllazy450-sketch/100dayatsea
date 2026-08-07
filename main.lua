@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (TOOLPROCESSOR FIX)
+-- W424 HUB | 100 DAYS AT SEA (EXACT GAME LOGIC)
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -10,32 +10,41 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local AutoDebrisEnabled = false
 
--- Fungsi Auto Farm menggunakan _G.ToolProcessor bawaan game
-local function autoFarmDebris()
+-- Fungsi Auto Farm meniru persis HarpoonScript asli game
+local function executeAutoHarpoon()
     pcall(function()
         local character = LocalPlayer.Character
         if not character then return end
         
-        -- Mencari tool Harpoon / Riptide yang sedang dipegang player
+        -- Cek apakah player sedang memegang tool Harpoon atau Riptide
         local tool = character:FindFirstChildOfClass("Tool")
-        if tool and (tool.Name:lower():find("harpoon") or tool.Name:lower():find("riptide")) then
+        if tool and (tool.Name == "Harpoon" or tool.Name == "Riptide") then
             local debrisField = Workspace:FindFirstChild("DebrisField")
             if debrisField then
                 for _, item in ipairs(debrisField:GetChildren()) do
                     if not AutoDebrisEnabled then break end
                     
                     local targetPart = item:FindFirstChild("Plank") or (item:IsA("Model") and item.PrimaryPart) or item
-                    if targetPart then
+                    local harpoonPart = tool:FindFirstChild("Harpoon1")
+                    
+                    if targetPart and harpoonPart and _G.ToolProcessor then
                         pcall(function()
-                            -- Tembak / Fire harpoon ke arah item
-                            if _G.ToolProcessor then
-                                _G.ToolProcessor(tool.Name, "Fire", tool.Harpoon1.Position, targetPart.Position)
-                                task.wait(0.4)
-                                -- Tarik kembali (Retract)
-                                _G.ToolProcessor(tool.Name, "Retract")
-                            end
+                            -- 1. Tembak peluru/kail harpoon ke arah item
+                            _G.ToolProcessor(tool.Name, "Fire", harpoonPart.Position, targetPart.Position)
+                            task.wait(0.3)
+                            
+                            -- 2. Tarik/Grab item secara instan lewat ToolProcessor game
+                            _G.ToolProcessor(tool.Name, "Grab", item, Vector3.new(0,0,0))
+                            task.wait(0.2)
+                            
+                            -- 3. Lepaskan (LetGo) dan Retract agar item jatuh bersih ke dek/air
+                            local dropVel = character.PrimaryPart and character.PrimaryPart.AssemblyLinearVelocity or Vector3.new(0,0,0)
+                            _G.ToolProcessor(tool.Name, "LetGo", item, dropVel, item:GetPivot(), true)
+                            
+                            task.wait(0.1)
+                            _G.ToolProcessor(tool.Name, "Retract")
                         end)
-                        task.wait(1)
+                        task.wait(1.5)
                     end
                 end
             end
@@ -80,11 +89,13 @@ MainTab:CreateToggle({
 task.spawn(function()
     while true do
         if AutoDebrisEnabled then
-            autoFarmDebris()
+            executeAutoHarpoon()
         end
         task.wait(1)
     end
 end)
 
 MiscTab:CreateSection("Information")
-MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Menggunakan _G.ToolProcessor asli game 100 Days at Sea."})
+MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Menggunakan logika ToolProcessor asli dari source code game."})
+
+Rayfield:LoadConfiguration()

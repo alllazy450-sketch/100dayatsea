@@ -72,6 +72,6 @@ task.spawn(function()
 end)
 
 MiscTab:CreateSection("Information")
-MiscTab:CreateParagraph({Title = "W424 Hub", Content = "UI diperbaiki agar tidak infinite yield."})
+MiscTab:CreateParagraph({Title = "W424 Hub", Content = "test."})
 
 Rayfield:LoadConfiguration()

@@ -1,59 +1,71 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (GLOBAL API FIX)
+-- W424 HUB | 100 DAYS AT SEA (FIX FINAL)
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ChatService = game:GetService("Chat")
 
 local LocalPlayer = Players.LocalPlayer
+local RemoteFunc = ChatService:FindFirstChild("RemoteFunction")
+local RemoteEv = ChatService:FindFirstChild("RemoteEvent")
 
--- Mengakses GlobalAPI yang terekam di Remote Spy
-local GlobalAPI = ReplicatedStorage:WaitForChild("GlobalAPI", 10)
+-- Cek apakah remote ditemukan
+if not RemoteFunc or not RemoteEv then
+    Rayfield:Notify({
+        Title = "ERROR",
+        Content = "Remote tidak ditemukan! Script tidak akan berfungsi.",
+        Duration = 5,
+    })
+    return
+end
 
 local AutoDebrisEnabled = false
 
+-- Fungsi grab & drop dengan posisi aman
 local function grabAndDropDebris(plankItem)
-    if not plankItem or not GlobalAPI then return end
+    if not plankItem then return end
     
     pcall(function()
-        -- 1. Berikan Ownership lewat GlobalAPI
-        GlobalAPI:FireServer(452963, "GiveUpOwnership", plankItem, "~v0,0,0")
+        -- 1. Give up ownership (agar bisa diambil)
+        RemoteEv:FireServer(452963, "GiveUpOwnership", plankItem, "~v0,0,0")
         task.wait(0.1)
         
-        -- 2. Attempt Drag & Harpoon Grab
-        GlobalAPI:InvokeServer(6244486, "AttemptDrag", plankItem)
-        GlobalAPI:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sGrab", plankItem, "~v0,0,0")
+        -- 2. Tarik item (AttemptDrag)
+        RemoteFunc:InvokeServer(6244486, "AttemptDrag", plankItem)
+        task.wait(0.1)
+        
+        -- 3. Harpoon Grab
+        RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sGrab", plankItem, "~v0,0,0")
         task.wait(0.3)
         
-        -- 3. Lepaskan Item di depan player agar tidak nyangkut di kepala
+        -- 4. LetGo dengan posisi di depan player (turun ke tanah)
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
             local hrp = char.HumanoidRootPart
-            local dropPos = hrp.Position + (hrp.CFrame.LookVector * 6) - Vector3.new(0, 2, 0)
+            -- Turunkan 3 stud agar pasti di tanah (karena HRP Y sekitar 2-3)
+            local dropPos = hrp.Position + (hrp.CFrame.LookVector * 6) - Vector3.new(0, 3, 0)
             local posString = string.format("~v%.4f,%.4f,%.4f", dropPos.X, dropPos.Y, dropPos.Z)
             
-            GlobalAPI:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sLetGo", plankItem, posString, "~f0,0,0:0,0,0Z0", "~b1")
+            RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sLetGo", plankItem, posString, "~f0,0,0:0,0,0Z0", "~b1")
         end
         
-        -- 4. Retract Harpoon
+        -- 5. Retract harpoon
         task.wait(0.1)
-        GlobalAPI:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sRetract")
+        RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sRetract")
     end)
 end
 
--- Rayfield UI Setup
+-- Setup UI Rayfield
 local Window = Rayfield:CreateWindow({
     Name = "W424 Hub | 100 Days at Sea",
     LoadingTitle = "Memuat W424 Hub...",
     LoadingSubtitle = "by W424",
     Theme = "DarkBlue",
     ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "W424Hub",
-        FileName = "100DaysConfig"
+        Enabled = false, -- Nonaktif agar tidak auto-on
     },
     KeySystem = false,
 })
@@ -77,7 +89,7 @@ MainTab:CreateToggle({
     end,
 })
 
--- Loop Auto Farm
+-- Loop utama auto farm
 task.spawn(function()
     while true do
         if AutoDebrisEnabled then
@@ -86,9 +98,10 @@ task.spawn(function()
                 if debrisField then
                     for _, item in ipairs(debrisField:GetChildren()) do
                         if not AutoDebrisEnabled then break end
+                        -- Cek apakah item adalah plank (bisa nama "Plank" atau ada child "Plank")
                         if item:FindFirstChild("Plank") or item.Name == "Plank" then
                             grabAndDropDebris(item)
-                            task.wait(1.2)
+                            task.wait(1.2) -- jeda agar tidak overheat
                         end
                     end
                 end
@@ -99,6 +112,6 @@ task.spawn(function()
 end)
 
 MiscTab:CreateSection("Information")
-MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Menggunakan GlobalAPI ReplicatedStorage sesuai data SimpleSpy."})
+MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Auto harpoon dengan posisi drop fix di tanah."})
 
 Rayfield:LoadConfiguration()

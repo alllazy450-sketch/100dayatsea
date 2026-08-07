@@ -1,64 +1,44 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (CLEAN DRAG)
+-- W424 HUB | 100 DAYS AT SEA
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 local AutoDebrisEnabled = false
 
--- Fungsi pencari RemoteFunction otomatis yang aman
-local function getRemoteFunction()
-    for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("RemoteFunction") and obj.Name == "RemoteFunction" then
-            return obj
-        end
-    end
-    return nil
-end
-
-local function dragAndDropDebris(item)
-    if not item then return end
-    
-    pcall(function()
-        local RemoteFunc = getRemoteFunction()
-        if not RemoteFunc then return end
-        
-        -- 1. Attempt Drag
-        RemoteFunc:InvokeServer(441520, "AttemptDrag", item)
-        task.wait(0.2)
-        
-        -- 2. Harpoon Grab
-        RemoteFunc:InvokeServer(441434, "ToolReplicator", "~sHarpoon", "~sGrab", item, "~v0,0,0")
-        task.wait(0.5)
-        
-        -- 3. Lepaskan (LetGo) agar tidak stuck di kepala
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local dropPos = hrp.Position + (hrp.CFrame.LookVector * 4)
-            local posString = string.format("~v%.4f,%.4f,%.4f", dropPos.X, dropPos.Y, dropPos.Z)
-            RemoteFunc:InvokeServer(441434, "ToolReplicator", "~sHarpoon", "~sLetGo", item, posString, "~f0,0,0:0,0,0Z0", "~b1")
-        end
-    end)
-end
-
--- Rayfield UI
 local Window = Rayfield:CreateWindow({
-    Name = "W424 Hub | Stable Drag",
-    LoadingTitle = "Memuat...",
+    Name = "W424 Hub | 100 Days at Sea",
+    LoadingTitle = "Memuat W424 Hub...",
+    LoadingSubtitle = "by W424",
     Theme = "DarkBlue",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "W424Hub",
+        FileName = "100DaysConfig"
+    },
     KeySystem = false,
 })
 
 local MainTab = Window:CreateTab("Main Farm", 4483345998)
+local MiscTab = Window:CreateTab("Settings", 4483345998)
+
+MainTab:CreateSection("Auto Loot & Debris")
 
 MainTab:CreateToggle({
-    Name = "Auto Drag & Drop Debris",
+    Name = "Auto Grab Floating Debris / Plank",
     CurrentValue = false,
+    Flag = "AutoDebrisToggle",
     Callback = function(Value)
         AutoDebrisEnabled = Value
+        Rayfield:Notify({
+            Title = "Status",
+            Content = AutoDebrisEnabled and "Auto Debris Diaktifkan" or "Auto Debris Dimatikan",
+            Duration = 2,
+        })
     end,
 })
 
@@ -66,13 +46,17 @@ task.spawn(function()
     while true do
         if AutoDebrisEnabled then
             pcall(function()
-                local debris = Workspace:FindFirstChild("DebrisField")
-                if debris then
-                    for _, item in ipairs(debris:GetChildren()) do
+                local debrisField = Workspace:FindFirstChild("DebrisField")
+                if debrisField then
+                    for _, item in ipairs(debrisField:GetChildren()) do
                         if not AutoDebrisEnabled then break end
-                        if item.Name == "Plank" then
-                            dragAndDropDebris(item)
-                            task.wait(1)
+                        if item:FindFirstChild("Plank") or item.Name == "Plank" then
+                            if item:IsA("Model") and item.PrimaryPart then
+                                item:SetPrimaryPartCFrame(LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0))
+                            elseif item:IsA("BasePart") then
+                                item.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
+                            end
+                            task.wait(0.3)
                         end
                     end
                 end
@@ -81,3 +65,8 @@ task.spawn(function()
         task.wait(1)
     end
 end)
+
+MiscTab:CreateSection("Information")
+MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Hub khusus game 100 Days at Sea."})
+
+Rayfield:LoadConfiguration()

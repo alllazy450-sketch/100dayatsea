@@ -1,43 +1,57 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (IMPROVED DRAG)
+-- W424 HUB | 100 DAYS AS SEA (SAFE DRAG FIX)
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local LogService = game:GetService("LogService")
-local RemoteFunc = LogService:WaitForChild("RemoteFunction")
+local LocalPlayer = Players.LocalPlayer
 
 local AutoDebrisEnabled = false
 
--- Fungsi Drag yang sudah di-improve (ditambah LetGo)
+-- Fungsi mencari RemoteFunction secara aman di seluruh game
+local function getRemoteFunction()
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj:IsA("RemoteFunction") and obj.Name == "RemoteFunction" then
+            return obj
+        end
+    end
+    return nil
+end
+
 local function dragAndDropDebris(item)
     if not item then return end
     
     pcall(function()
-        -- 1. Mulai Dragging (Ini metode yang kamu bilang work)
+        local RemoteFunc = getRemoteFunction()
+        if not RemoteFunc then return end
+        
+        -- 1. Attempt Drag
         RemoteFunc:InvokeServer(441520, "AttemptDrag", item)
         task.wait(0.2)
         
-        -- 2. Grab (Sesuai metode work kamu)
+        -- 2. Harpoon Grab
         RemoteFunc:InvokeServer(441434, "ToolReplicator", "~sHarpoon", "~sGrab", item, "~v0,0,0")
         task.wait(0.5)
         
-        -- 3. IMPROVEMENT: Paksa Lepas (LetGo) supaya tidak stuck di kepala
-        -- Kita kirim posisi drop tepat di bawah/depan kaki player
-        local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        -- 3. Lepaskan (LetGo) agar tidak stuck di kepala
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if hrp then
             local dropPos = hrp.Position + (hrp.CFrame.LookVector * 4)
             local posString = string.format("~v%.4f,%.4f,%.4f", dropPos.X, dropPos.Y, dropPos.Z)
-            
-            -- Remote untuk melepaskan item
             RemoteFunc:InvokeServer(441434, "ToolReplicator", "~sHarpoon", "~sLetGo", item, posString, "~f0,0,0:0,0,0Z0", "~b1")
         end
     end)
 end
 
--- Rayfield UI (Tetap sama)
-local Window = Rayfield:CreateWindow({Name = "W424 Hub | Stable Drag", LoadingTitle = "Memuat...", Theme = "DarkBlue", KeySystem = false})
+-- Rayfield UI
+local Window = Rayfield:CreateWindow({
+    Name = "W424 Hub | Stable Drag",
+    LoadingTitle = "Memuat...",
+    Theme = "DarkBlue",
+    KeySystem = false,
+})
+
 local MainTab = Window:CreateTab("Main Farm", 4483345998)
 
 MainTab:CreateToggle({

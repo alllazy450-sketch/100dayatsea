@@ -1,16 +1,54 @@
-
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA
+-- W424 HUB | 100 DAYS AT SEA (FIX POSISI DROP)
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local ChatService = game:GetService("Chat")
+
 local LocalPlayer = Players.LocalPlayer
+local RemoteFunc = ChatService:WaitForChild("RemoteFunction")
+local RemoteEv = ChatService:WaitForChild("RemoteEvent")
 
 local AutoDebrisEnabled = false
 
+-- Fungsi Harpoon & Drop yang Lebih Aman (Agar tidak nyangkut di kepala)
+local function grabAndDropDebris(plankItem)
+    if not plankItem then return end
+    
+    pcall(function()
+        -- 1. Berikan Ownership
+        RemoteEv:FireServer(6245093, "GiveUpOwnership", plankItem, "~v0,0,0")
+        task.wait(0.1)
+        
+        -- 2. Attempt Drag
+        RemoteFunc:InvokeServer(6244486, "AttemptDrag", plankItem)
+        task.wait(0.1)
+        
+        -- 3. Grab dengan Harpoon
+        RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sGrab", plankItem, "~v0,0,0")
+        task.wait(0.3)
+        
+        -- 4. Lepaskan Item agak jauh di depan player (Supaya tidak melayang di kepala)
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local hrp = char.HumanoidRootPart
+            -- Menaruh item 6 stud di depan player dan sedikit lebih rendah
+            local dropPos = hrp.Position + (hrp.CFrame.LookVector * 6) - Vector3.new(0, 2, 0)
+            local posString = string.format("~v%.4f,%.4f,%.4f", dropPos.X, dropPos.Y, dropPos.Z)
+            
+            RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sLetGo", plankItem, posString, "~f0,0,0:0,0,0Z0", "~b1")
+        end
+        
+        -- 5. Tarik kail (Retract)
+        task.wait(0.1)
+        RemoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sRetract")
+    end)
+end
+
+-- Rayfield UI Setup
 local Window = Rayfield:CreateWindow({
     Name = "W424 Hub | 100 Days at Sea",
     LoadingTitle = "Memuat W424 Hub...",
@@ -30,19 +68,20 @@ local MiscTab = Window:CreateTab("Settings", 4483345998)
 MainTab:CreateSection("Auto Loot & Debris")
 
 MainTab:CreateToggle({
-    Name = "Auto Grab Floating Debris / Plank",
+    Name = "Auto Harpoon Debris / Plank",
     CurrentValue = false,
     Flag = "AutoDebrisToggle",
     Callback = function(Value)
         AutoDebrisEnabled = Value
         Rayfield:Notify({
             Title = "Status",
-            Content = AutoDebrisEnabled and "Auto Debris Diaktifkan" or "Auto Debris Dimatikan",
+            Content = AutoDebrisEnabled and "Auto Harpoon Diaktifkan" or "Auto Harpoon Dimatikan",
             Duration = 2,
         })
     end,
 })
 
+-- Loop Auto Farming Debris
 task.spawn(function()
     while true do
         if AutoDebrisEnabled then
@@ -52,12 +91,8 @@ task.spawn(function()
                     for _, item in ipairs(debrisField:GetChildren()) do
                         if not AutoDebrisEnabled then break end
                         if item:FindFirstChild("Plank") or item.Name == "Plank" then
-                            if item:IsA("Model") and item.PrimaryPart then
-                                item:SetPrimaryPartCFrame(LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0))
-                            elseif item:IsA("BasePart") then
-                                item.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
-                            end
-                            task.wait(0.3)
+                            grabAndDropDebris(item)
+                            task.wait(1.2)
                         end
                     end
                 end
@@ -68,6 +103,6 @@ task.spawn(function()
 end)
 
 MiscTab:CreateSection("Information")
-MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Hub khusus game 100 Days at Sea."})
+MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Fix posisi drop agar item tidak nyangkut di kepala."})
 
 Rayfield:LoadConfiguration()

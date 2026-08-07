@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (AUTO-SCAN REMOTES)
+-- W424 HUB | 100 DAYS AT SEA (GLOBAL API FIX)
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -9,54 +9,38 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
+
+-- Mengakses GlobalAPI yang terekam di Remote Spy
+local GlobalAPI = ReplicatedStorage:WaitForChild("GlobalAPI", 10)
+
 local AutoDebrisEnabled = false
 
--- Fungsi pencari remote otomatis yang aman dari Infinite Yield
-local function findRemote(parent, className, name)
-    for _, obj in ipairs(parent:GetDescendants()) do
-        if obj:IsA(className) and obj.Name == name then
-            return obj
-        end
-    end
-    return nil
-end
-
 local function grabAndDropDebris(plankItem)
-    if not plankItem then return end
+    if not plankItem or not GlobalAPI then return end
     
     pcall(function()
-        -- Cari Remote secara dinamis di seluruh game
-        local remoteEvent = findRemote(game, "RemoteEvent", "RemoteEvent") or findRemote(game, "RemoteEvent", "GiveUpOwnership")
-        local remoteFunc = findRemote(game, "RemoteFunction", "RemoteFunction")
-        
-        if remoteEvent then
-            pcall(function()
-                remoteEvent:FireServer(452963, "GiveUpOwnership", plankItem, "~v0,0,0")
-            end)
-        end
-        
+        -- 1. Berikan Ownership lewat GlobalAPI
+        GlobalAPI:FireServer(452963, "GiveUpOwnership", plankItem, "~v0,0,0")
         task.wait(0.1)
         
-        if remoteFunc then
-            pcall(function()
-                remoteFunc:InvokeServer(6244486, "AttemptDrag", plankItem)
-                remoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sGrab", plankItem, "~v0,0,0")
-            end)
+        -- 2. Attempt Drag & Harpoon Grab
+        GlobalAPI:InvokeServer(6244486, "AttemptDrag", plankItem)
+        GlobalAPI:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sGrab", plankItem, "~v0,0,0")
+        task.wait(0.3)
+        
+        -- 3. Lepaskan Item di depan player agar tidak nyangkut di kepala
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local hrp = char.HumanoidRootPart
+            local dropPos = hrp.Position + (hrp.CFrame.LookVector * 6) - Vector3.new(0, 2, 0)
+            local posString = string.format("~v%.4f,%.4f,%.4f", dropPos.X, dropPos.Y, dropPos.Z)
             
-            task.wait(0.3)
-            
-            pcall(function()
-                local char = LocalPlayer.Character
-                if char and char:FindFirstChild("HumanoidRootPart") then
-                    local hrp = char.HumanoidRootPart
-                    local dropPos = hrp.Position + (hrp.CFrame.LookVector * 6) - Vector3.new(0, 2, 0)
-                    local posString = string.format("~v%.4f,%.4f,%.4f", dropPos.X, dropPos.Y, dropPos.Z)
-                    
-                    remoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sLetGo", plankItem, posString, "~f0,0,0:0,0,0Z0", "~b1")
-                end
-                remoteFunc:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sRetract")
-            end)
+            GlobalAPI:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sLetGo", plankItem, posString, "~f0,0,0:0,0,0Z0", "~b1")
         end
+        
+        -- 4. Retract Harpoon
+        task.wait(0.1)
+        GlobalAPI:InvokeServer(6244486, "ToolReplicator", "~sHarpoon", "~sRetract")
     end)
 end
 
@@ -115,6 +99,6 @@ task.spawn(function()
 end)
 
 MiscTab:CreateSection("Information")
-MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Menggunakan pencari remote otomatis untuk menghindari Infinite Yield."})
+MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Menggunakan GlobalAPI ReplicatedStorage sesuai data SimpleSpy."})
 
 Rayfield:LoadConfiguration()

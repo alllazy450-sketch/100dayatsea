@@ -1,23 +1,20 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FIXED)
+-- W424 HUB | 100 DAYS AT SEA
 -- ==========================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
-
 local LocalPlayer = Players.LocalPlayer
+
 local AutoDebrisEnabled = false
 
--- Rayfield Window Setup
 local Window = Rayfield:CreateWindow({
     Name = "W424 Hub | 100 Days at Sea",
     LoadingTitle = "Memuat W424 Hub...",
     LoadingSubtitle = "by W424",
-    Theme = "Dark",
-    
+    Theme = "DarkBlue",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "W424Hub",
@@ -39,13 +36,12 @@ MainTab:CreateToggle({
         AutoDebrisEnabled = Value
         Rayfield:Notify({
             Title = "Status",
-            Content = AutoDebrisEnabled ? "Auto Debris Diaktifkan" : "Auto Debris Dimatikan",
+            Content = AutoDebrisEnabled and "Auto Debris Diaktifkan" or "Auto Debris Dimatikan",
             Duration = 2,
         })
     end,
 })
 
--- Loop Aman Tanpa Error RemoteFunction
 task.spawn(function()
     while true do
         if AutoDebrisEnabled then
@@ -55,7 +51,6 @@ task.spawn(function()
                     for _, item in ipairs(debrisField:GetChildren()) do
                         if not AutoDebrisEnabled then break end
                         if item:FindFirstChild("Plank") or item.Name == "Plank" then
-                            -- Teleport item langsung ke player sebagai alternatif aman
                             if item:IsA("Model") and item.PrimaryPart then
                                 item:SetPrimaryPartCFrame(LocalPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0))
                             elseif item:IsA("BasePart") then
@@ -72,6 +67,6 @@ task.spawn(function()
 end)
 
 MiscTab:CreateSection("Information")
-MiscTab:CreateParagraph({Title = "W424 Hub", Content = "test."})
+MiscTab:CreateParagraph({Title = "W424 Hub", Content = "Hub khusus game 100 Days at Sea."})
 
 Rayfield:LoadConfiguration()

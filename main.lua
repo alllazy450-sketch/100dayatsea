@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (DEBUG + FILTER MULTI)
+-- W424 HUB | 100 DAYS AT SEA (DEBRISFIELD OPTIMIZED)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -9,15 +9,15 @@ local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
     AutoCollect = false,
     CollectRadius = 50,
-    CollectFilter = "wood,plank",  -- default multiple
-    Debug = true,  -- aktifkan debug untuk melihat output
+    CollectFilter = "plank,wood",
+    Debug = true,
 }
 
 -- ===== BUAT WINDOW UTAMA =====
@@ -166,12 +166,12 @@ local function isUnderwater(part)
     return false
 end
 
--- Fungsi untuk memeriksa apakah itemName cocok dengan filter (multi kata dipisah koma)
+-- Fungsi filter multi
 local function matchFilter(itemName, filter)
     if filter == "" then return true end
     itemName = itemName:lower()
     for word in string.gmatch(filter, "[^,]+") do
-        word = word:gsub("^%s*(.-)%s*$", "%1") -- trim spasi
+        word = word:gsub("^%s*(.-)%s*$", "%1")
         if string.find(itemName, word:lower()) then
             return true
         end
@@ -180,7 +180,7 @@ local function matchFilter(itemName, filter)
 end
 
 -- ==========================================
--- 1. AUTO HARPOON
+-- 1. AUTO HARPOON (tetap sama)
 -- ==========================================
 local harpoonRemote = nil
 
@@ -246,43 +246,104 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (DENGAN FILTER MULTI)
+-- 2. AUTO COLLECT (FOKUS DEBRISFIELD + OPTIMASI)
 -- ==========================================
 local collectedParts = {}
+local debrisField = nil
+
+-- Cari DebrisField di Workspace
+local function findDebrisField()
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if child:IsA("Model") and child.Name == "DebrisField" then
+            debrisField = child
+            return child
+        end
+    end
+    return nil
+end
+findDebrisField()
+
+-- Pantau jika DebrisField muncul
+Workspace.ChildAdded:Connect(function(child)
+    if child:IsA("Model") and child.Name == "DebrisField" then
+        debrisField = child
+        if getgenv().W424_Sea.Debug then print("DebrisField found!") end
+    end
+end)
+
+-- Cari remote AttemptDrag (opsional)
+local dragRemote = nil
+local function findDragRemote()
+    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("RemoteFunction") and obj.Name == "AttemptDrag" then
+            dragRemote = obj
+            return obj
+        end
+    end
+    return nil
+end
+task.spawn(function()
+    while task.wait(2) do
+        findDragRemote()
+        if dragRemote then break end
+    end
+end)
+
+-- Fungsi untuk mengambil item menggunakan remote AttemptDrag
+local function attemptDragItem(part)
+    if not dragRemote then return false end
+    local model = part.Parent
+    if model and model:IsA("Model") then
+        local success, result = pcall(function()
+            return dragRemote:InvokeServer(model)
+        end)
+        if success then
+            return true
+        end
+    end
+    return false
+end
 
 task.spawn(function()
-    while task.wait(0.15) do
+    while task.wait(0.2) do -- loop lebih lambat untuk kurangi beban
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
+            if not debrisField then
+                findDebrisField()
+                return
+            end
+
             local filter = getgenv().W424_Sea.CollectFilter or ""
             local radius = getgenv().W424_Sea.CollectRadius or 50
             local origin = hrp.Position
             local targetPos = hrp.CFrame * CFrame.new(0, 2, 0)
             local debug = getgenv().W424_Sea.Debug
 
-            for _, part in ipairs(Workspace:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide and part ~= hrp and part.Parent ~= LocalPlayer.Character then
+            -- Hanya scan item di DebrisField
+            for _, part in ipairs(debrisField:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide and part ~= hrp then
                     local parent = part.Parent
-                    local isValid = false
                     local itemName = ""
+                    local isValid = false
 
-                    -- Deteksi item
-                    if parent and parent:IsA("Model") and not isCreature(parent) and not isIsland(parent) and not isRaftPart(parent) then
-                        isValid = true
+                    -- Ambil nama dari model induk atau part
+                    if parent and parent:IsA("Model") then
                         itemName = parent.Name:lower()
-                    elseif part:GetAttribute("Item") or part:GetAttribute("Resource") then
                         isValid = true
+                    else
                         itemName = part.Name:lower()
-                    elseif parent and parent:IsA("Model") and parent:GetAttribute("Item") then
                         isValid = true
-                        itemName = parent.Name:lower()
                     end
 
-                    -- Filter bawah air dan ukuran
+                    -- Filter: skip underwater, terlalu besar, atau raft
                     if isValid and (isUnderwater(part) or part.Size.Magnitude > 8) then
                         if debug then print("Skip (underwater/too big):", itemName) end
+                        isValid = false
+                    end
+                    if isValid and isRaftPart(parent) then
+                        if debug then print("Skip (raft):", itemName) end
                         isValid = false
                     end
 
@@ -298,21 +359,36 @@ task.spawn(function()
                             if collectedParts[part] and tick() - collectedParts[part] < 1 then
                                 -- cooldown
                             else
-                                local success = pcall(function()
-                                    part.CFrame = targetPos
-                                    part.Velocity = Vector3.zero
-                                end)
-                                if success then
-                                    collectedParts[part] = tick()
-                                    if debug then print("Collected:", itemName, "from", parent and parent.Name or "nil", "dist:", dist) end
-                                else
-                                    if not isUnderwater(part) then
-                                        local tween = TweenService:Create(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {CFrame = part.CFrame * CFrame.new(0,0,2)})
-                                        tween:Play()
-                                        tween.Completed:Wait()
-                                        collectedParts[part] = tick()
-                                        if debug then print("Collected (tween):", itemName) end
+                                local collected = false
+                                -- Coba gunakan remote AttemptDrag
+                                if dragRemote then
+                                    local success = attemptDragItem(part)
+                                    if success then
+                                        collected = true
+                                        if debug then print("Collected via AttemptDrag:", itemName) end
                                     end
+                                end
+                                -- Jika remote gagal, gunakan metode paksa
+                                if not collected then
+                                    local success = pcall(function()
+                                        part.CFrame = targetPos
+                                        part.Velocity = Vector3.zero
+                                    end)
+                                    if success then
+                                        collected = true
+                                        if debug then print("Collected (force):", itemName, "dist:", dist) end
+                                    else
+                                        if not isUnderwater(part) then
+                                            local tween = TweenService:Create(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {CFrame = part.CFrame * CFrame.new(0,0,2)})
+                                            tween:Play()
+                                            tween.Completed:Wait()
+                                            collected = true
+                                            if debug then print("Collected (tween):", itemName) end
+                                        end
+                                    end
+                                end
+                                if collected then
+                                    collectedParts[part] = tick()
                                 end
                             end
                         end
@@ -324,7 +400,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 3. ESP (DUAL TOGGLE + FILTER PULAU & RAFT)
+-- 3. ESP (tetap sama)
 -- ==========================================
 local ESP = {
     creatures = { enabled = false, highlights = {} },
@@ -342,6 +418,18 @@ local function createHighlight(adornee, color)
     return hl
 end
 
+local function isDebrisItem(obj)
+    -- Cek apakah objek berada di DebrisField
+    local parent = obj.Parent
+    while parent do
+        if parent:IsA("Model") and parent.Name == "DebrisField" then
+            return true
+        end
+        parent = parent.Parent
+    end
+    return false
+end
+
 local function addESP(tag, color)
     if not ESP[tag] then return end
     local enabled = ESP[tag].enabled
@@ -355,8 +443,11 @@ local function addESP(tag, color)
                 table.insert(ESP[tag].highlights, hl)
             elseif tag == "items" and not hasHumanoid then
                 if not isIsland(obj) and not isRaftPart(obj) and obj:FindFirstChildWhichIsA("BasePart") then
-                    local hl = createHighlight(obj, color)
-                    table.insert(ESP[tag].highlights, hl)
+                    -- Fokus pada item di DebrisField
+                    if isDebrisItem(obj) then
+                        local hl = createHighlight(obj, color)
+                        table.insert(ESP[tag].highlights, hl)
+                    end
                 end
             end
         end
@@ -380,8 +471,10 @@ local function setupESPConnection()
                 local hl = createHighlight(obj, Color3.fromRGB(255,50,50))
                 table.insert(ESP.creatures.highlights, hl)
             elseif ESP.items.enabled and not hasHumanoid and not isIsland(obj) and not isRaftPart(obj) and obj:FindFirstChildWhichIsA("BasePart") then
-                local hl = createHighlight(obj, Color3.fromRGB(50,255,50))
-                table.insert(ESP.items.highlights, hl)
+                if isDebrisItem(obj) then
+                    local hl = createHighlight(obj, Color3.fromRGB(50,255,50))
+                    table.insert(ESP.items.highlights, hl)
+                end
             end
         end
     end)
@@ -449,8 +542,8 @@ Tabs.Loot:AddInput({
 
 Tabs.Loot:AddInput({
     Title = "Item Filter (nama item, pisah koma)",
-    Default = "wood,plank",
-    Placeholder = "cth: wood,plank,log",
+    Default = "plank,wood",
+    Placeholder = "cth: plank,wood,log",
     Callback = function(value)
         getgenv().W424_Sea.CollectFilter = value or ""
     end
@@ -480,4 +573,4 @@ Tabs.Visuals:AddToggle({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Debug + Multi Filter Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "DebrisField Optimized Loaded!", 4)

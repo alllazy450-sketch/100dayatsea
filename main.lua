@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FINAL FIX)
+-- W424 HUB | 100 DAYS AT SEA (FINAL FIX - PLANK)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -16,7 +16,7 @@ getgenv().W424_Sea = {
     HarpoonRadius = 150,
     AutoCollect = false,
     CollectRadius = 50,
-    CollectFilter = "wood",
+    CollectFilter = "plank",  -- default ke "plank"
     Debug = false,
 }
 
@@ -137,14 +137,12 @@ local function isIsland(model)
     return false
 end
 
--- Fungsi untuk mengecek apakah objek adalah bagian dari raft/floor/base
 local function isRaftPart(model)
     if not model then return false end
     local name = model.Name:lower()
     if string.find(name, "raft") or string.find(name, "floor") or string.find(name, "base") or string.find(name, "platform") then
         return true
     end
-    -- Cek parent hingga ke workspace
     local parent = model.Parent
     while parent do
         if parent:IsA("Model") then
@@ -161,9 +159,7 @@ local function isRaftPart(model)
     return false
 end
 
--- Fungsi untuk mengecek apakah part berada di bawah permukaan air (bukan item terapung)
 local function isUnderwater(part)
-    -- Asumsi permukaan air Y=0, item yang valid biasanya di atas atau sedikit di bawah
     if part and part:IsA("BasePart") then
         return part.Position.Y < -5
     end
@@ -258,34 +254,24 @@ task.spawn(function()
                     local isValid = false
                     local itemName = ""
 
-                    -- Kriteria validasi:
-                    -- 1. Parent adalah Model tanpa Humanoid dan bukan Island/Raft
+                    -- Deteksi nama item: cek parent model, lalu atribut, lalu part
                     if parent and parent:IsA("Model") and not isCreature(parent) and not isIsland(parent) and not isRaftPart(parent) then
                         isValid = true
                         itemName = parent.Name:lower()
-                    -- 2. Part langsung memiliki atribut Item/Resource
                     elseif part:GetAttribute("Item") or part:GetAttribute("Resource") then
                         isValid = true
                         itemName = part.Name:lower()
-                    -- 3. Parent adalah Model dan memiliki atribut Item
                     elseif parent and parent:IsA("Model") and parent:GetAttribute("Item") then
                         isValid = true
                         itemName = parent.Name:lower()
                     end
 
-                    -- Tambahan: jangan ambil part yang berada di bawah air (bukan item terapung)
-                    if isValid and isUnderwater(part) then
+                    -- Jangan ambil yang di bawah air atau terlalu besar
+                    if isValid and (isUnderwater(part) or part.Size.Magnitude > 8) then
                         isValid = false
                     end
 
-                    -- Tambahan: jangan ambil part yang terlalu besar (kemungkinan bagian struktur)
-                    if isValid then
-                        local size = part.Size.Magnitude
-                        if size > 8 then -- item biasanya < 5 studs
-                            isValid = false
-                        end
-                    end
-
+                    -- Filter: cek apakah itemName mengandung filter (case-insensitive)
                     local filterMatch = (filter == "" or string.find(itemName, filter:lower()))
                     if isValid and filterMatch then
                         local dist = (part.Position - origin).Magnitude
@@ -293,7 +279,6 @@ task.spawn(function()
                             if collectedParts[part] and tick() - collectedParts[part] < 1 then
                                 -- cooldown
                             else
-                                -- Coba pindahkan part ke player
                                 local success = pcall(function()
                                     part.CFrame = targetPos
                                     part.Velocity = Vector3.zero
@@ -304,7 +289,7 @@ task.spawn(function()
                                         print("Collected:", part.Name, "from", parent and parent.Name or "nil")
                                     end
                                 else
-                                    -- fallback: pindahkan player ke part (tapi hati-hati jangan ke bawah air)
+                                    -- fallback: pindahkan player ke part (hanya jika tidak di bawah air)
                                     if not isUnderwater(part) then
                                         local tween = TweenService:Create(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {CFrame = part.CFrame * CFrame.new(0,0,2)})
                                         tween:Play()
@@ -447,7 +432,7 @@ Tabs.Loot:AddInput({
 
 Tabs.Loot:AddInput({
     Title = "Item Filter (nama item)",
-    Default = "wood",
+    Default = "plank",
     Placeholder = "Kata kunci (kosongkan untuk semua)",
     Callback = function(value)
         getgenv().W424_Sea.CollectFilter = value or ""
@@ -478,4 +463,4 @@ Tabs.Visuals:AddToggle({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Final Fix loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Final Fix - Plank Filter Loaded!", 4)

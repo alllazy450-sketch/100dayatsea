@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AS SEA (TELEPORT TARGET CHANGER)
+-- W424 HUB | 100 DAYS AT SEA (EXACT REMOTE SPY FIX)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -8,14 +8,14 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local CollectionService = game:GetService("CollectionService")
+local LocalizationService = game:GetService("LocalizationService")
 local LocalPlayer = Players.LocalPlayer
 
 getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
-    AutoCollect = false,
+    AutoDropRemote = false,
     CollectRadius = 100,
-    TargetDestination = "Crafting", -- "Crafting" atau "Campfire"
 }
 
 -- ===== BUAT WINDOW UTAMA =====
@@ -54,7 +54,7 @@ end)
 -- ===== TAB MENU =====
 local Tabs = {
     Combat  = Window:AddTab("Combat"),
-    Loot    = Window:AddTab("Auto Teleport Loot"),
+    Loot    = Window:AddTab("Auto Drop Remote"),
 }
 
 local function getHRP()
@@ -98,20 +98,20 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT & TELEPORT TO TARGET (Crafting / Campfire)
+-- 2. AUTO GIVE UP OWNERSHIP (Berdasarkan Remote Spy Asli)
 -- ==========================================
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(0.6) do
         pcall(function()
-            if not getgenv().W424_Sea.AutoCollect then return end
+            if not getgenv().W424_Sea.AutoDropRemote then return end
             local hrp = getHRP()
             if not hrp then return end
 
             local radius = getgenv().W424_Sea.CollectRadius or 100
-            local startPos = hrp.CFrame
+            local remoteEvent = LocalizationService:FindFirstChild("RemoteEvent")
 
             for _, obj in ipairs(CollectionService:GetTagged("Floating_Object")) do
-                if not getgenv().W424_Sea.AutoCollect then break end
+                if not getgenv().W424_Sea.AutoDropRemote then break end
                 
                 local part = nil
                 if obj:IsA("BasePart") then
@@ -122,40 +122,22 @@ task.spawn(function()
 
                 if part then
                     local dist = (part.Position - hrp.Position).Magnitude
+                    -- Pastikan item ada di area laut
                     if dist <= radius and part.Position.Y < 148 then
                         
-                        -- Titik tujuan di atas rakit (bisa diubah posisinya sesuai lokasi mesin craft/campfire kamu)
-                        -- Contoh: Kita pakai posisi relatif di sekitar player saat tombol dinyalakan
-                        local targetPos = startPos + Vector3.new(0, 3, 0) -- Default dekat player
-                        
-                        -- Jika ingin menentukan titik spesifik Crafting atau Campfire:
-                        -- (Kamu bisa berdiri di depan mesinnya, lalu sesuaikan koordinat CFrame-nya di sini jika mau fix)
-
-                        -- LANGKAH 1: Teleport karakter ke item di laut
-                        hrp.CFrame = part.CFrame + Vector3.new(0, 2, 0)
-                        task.wait(0.2)
-                        
-                        -- LANGKAH 2: Sentuh item agar ter-trigger / terpegang
-                        firetouchinterest(hrp, part, 0)
-                        firetouchinterest(hrp, part, 1)
-                        task.wait(0.2)
-
-                        -- LANGKAH 3: Bawa itemnya langsung teleport ke tujuan (Crafting / Campfire)
-                        if getgenv().W424_Sea.TargetDestination == "Crafting" then
-                            -- Pindahkan player & item ke area Mesin Crafting (Contoh posisi di atas rakit)
-                            hrp.CFrame = startPos + Vector3.new(-3, 3, 0) 
-                        else
-                            -- Pindahkan player & item ke area Campfire
-                            hrp.CFrame = startPos + Vector3.new(3, 3, 0)
+                        if remoteEvent then
+                            -- Format argumen persis seperti hasil Spy manual kamu
+                            local args = {
+                                407115, -- ID referensi game
+                                "GiveUpOwnership",
+                                obj,    -- Objek item laut yang terdeteksi
+                                "~v-0.0001,-0.0001,0" -- Koordinat default drop
+                            }
+                            
+                            remoteEvent:FireServer(unpack(args))
                         end
                         
-                        part.CFrame = hrp.CFrame + Vector3.new(0, 0, -2)
-                        task.wait(0.2)
-                        
-                        -- LANGKAH 4: Lepas sentuhan / Drop item
-                        firetouchinterest(hrp, part, 1)
-                        task.wait(0.3)
-                        
+                        task.wait(0.4)
                         break
                     end
                 end
@@ -185,18 +167,9 @@ Tabs.Combat:AddInput({
 })
 
 Tabs.Loot:AddToggle({
-    Title = "Auto Teleport Loot to Target",
+    Title = "Auto Remote Drop Items",
     Default = false,
-    Callback = function(state) getgenv().W424_Sea.AutoCollect = state end
-})
-
-Tabs.Loot:AddDropdown({
-    Title = "Pilih Tujuan Teleport Item",
-    Values = {"Crafting", "Campfire"},
-    DefaultValue = "Crafting",
-    Callback = function(value)
-        getgenv().W424_Sea.TargetDestination = value
-    end
+    Callback = function(state) getgenv().W424_Sea.AutoDropRemote = state end
 })
 
 Tabs.Loot:AddInput({
@@ -209,4 +182,4 @@ Tabs.Loot:AddInput({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Teleport Target Switcher Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Remote Spy Hook Applied!", 4)

@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (DEBRISFIELD OPTIMIZED)
+-- W424 HUB | 100 DAYS AT SEA (FINAL WORKING)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -15,7 +15,7 @@ getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
     AutoCollect = false,
-    CollectRadius = 50,
+    CollectRadius = 30,
     CollectFilter = "plank,wood",
     Debug = true,
 }
@@ -161,12 +161,23 @@ end
 
 local function isUnderwater(part)
     if part and part:IsA("BasePart") then
-        return part.Position.Y < -5
+        return part.Position.Y < -3
     end
     return false
 end
 
--- Fungsi filter multi
+local function isDebrisFieldItem(part)
+    local parent = part.Parent
+    while parent do
+        if parent:IsA("Model") and parent.Name == "DebrisField" then
+            return true
+        end
+        parent = parent.Parent
+    end
+    return false
+end
+
+-- Filter multi
 local function matchFilter(itemName, filter)
     if filter == "" then return true end
     itemName = itemName:lower()
@@ -180,10 +191,9 @@ local function matchFilter(itemName, filter)
 end
 
 -- ==========================================
--- 1. AUTO HARPOON (tetap sama)
+-- 1. AUTO HARPOON (sama)
 -- ==========================================
 local harpoonRemote = nil
-
 local function findHarpoonRemote()
     local char = LocalPlayer.Character
     if not char then return nil end
@@ -200,7 +210,6 @@ local function findHarpoonRemote()
     end
     return nil
 end
-
 task.spawn(function()
     while task.wait(1) do
         harpoonRemote = findHarpoonRemote()
@@ -215,11 +224,9 @@ task.spawn(function()
             if not hrp then return end
             local remote = harpoonRemote
             if not remote then return end
-
             local radius = getgenv().W424_Sea.HarpoonRadius or 150
             local origin = hrp.Position
             local targets = {}
-
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if obj:IsA("Model") and obj ~= LocalPlayer.Character then
                     local humanoid = obj:FindFirstChildOfClass("Humanoid")
@@ -231,7 +238,6 @@ task.spawn(function()
                     end
                 end
             end
-
             if #targets > 0 then
                 table.sort(targets, function(a, b)
                     return (a.part.Position - origin).Magnitude < (b.part.Position - origin).Magnitude
@@ -246,32 +252,36 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (FOKUS DEBRISFIELD + OPTIMASI)
+-- 2. AUTO COLLECT (FOKUS DEBRISFIELD + FALLBACK)
 -- ==========================================
 local collectedParts = {}
 local debrisField = nil
+local debrisFound = false
 
--- Cari DebrisField di Workspace
+-- Cari DebrisField
 local function findDebrisField()
     for _, child in ipairs(Workspace:GetChildren()) do
         if child:IsA("Model") and child.Name == "DebrisField" then
             debrisField = child
+            debrisFound = true
+            if getgenv().W424_Sea.Debug then print("DebrisField found!") end
             return child
         end
     end
+    debrisFound = false
     return nil
 end
 findDebrisField()
 
--- Pantau jika DebrisField muncul
 Workspace.ChildAdded:Connect(function(child)
     if child:IsA("Model") and child.Name == "DebrisField" then
         debrisField = child
-        if getgenv().W424_Sea.Debug then print("DebrisField found!") end
+        debrisFound = true
+        if getgenv().W424_Sea.Debug then print("DebrisField added!") end
     end
 end)
 
--- Cari remote AttemptDrag (opsional)
+-- Remote AttemptDrag
 local dragRemote = nil
 local function findDragRemote()
     for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
@@ -289,7 +299,6 @@ task.spawn(function()
     end
 end)
 
--- Fungsi untuk mengambil item menggunakan remote AttemptDrag
 local function attemptDragItem(part)
     if not dragRemote then return false end
     local model = part.Parent
@@ -304,52 +313,68 @@ local function attemptDragItem(part)
     return false
 end
 
+-- Fungsi utama collect
 task.spawn(function()
-    while task.wait(0.2) do -- loop lebih lambat untuk kurangi beban
+    while task.wait(0.25) do
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
-            if not debrisField then
-                findDebrisField()
-                return
-            end
 
             local filter = getgenv().W424_Sea.CollectFilter or ""
-            local radius = getgenv().W424_Sea.CollectRadius or 50
+            local radius = getgenv().W424_Sea.CollectRadius or 30
             local origin = hrp.Position
             local targetPos = hrp.CFrame * CFrame.new(0, 2, 0)
             local debug = getgenv().W424_Sea.Debug
 
-            -- Hanya scan item di DebrisField
-            for _, part in ipairs(debrisField:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide and part ~= hrp then
+            -- Kumpulkan part yang akan diproses
+            local partsToCheck = {}
+
+            -- Jika DebrisField ada, fokus ke situ
+            if debrisFound and debrisField then
+                for _, part in ipairs(debrisField:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        table.insert(partsToCheck, part)
+                    end
+                end
+            else
+                -- Fallback: scan seluruh workspace (jarang)
+                for _, part in ipairs(Workspace:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide and part.Parent ~= LocalPlayer.Character then
+                        -- Hanya ambil part yang ukuran kecil dan tidak di bawah air
+                        if part.Size.Magnitude < 8 and not isUnderwater(part) then
+                            table.insert(partsToCheck, part)
+                        end
+                    end
+                end
+            end
+
+            for _, part in ipairs(partsToCheck) do
+                if part ~= hrp then
                     local parent = part.Parent
                     local itemName = ""
-                    local isValid = false
 
-                    -- Ambil nama dari model induk atau part
+                    -- Ambil nama dari model induk (jika ada)
                     if parent and parent:IsA("Model") then
                         itemName = parent.Name:lower()
-                        isValid = true
                     else
                         itemName = part.Name:lower()
-                        isValid = true
                     end
 
-                    -- Filter: skip underwater, terlalu besar, atau raft
-                    if isValid and (isUnderwater(part) or part.Size.Magnitude > 8) then
-                        if debug then print("Skip (underwater/too big):", itemName) end
-                        isValid = false
+                    -- Validasi: bukan raft, bukan island, bukan creature
+                    local isValid = true
+                    if parent and parent:IsA("Model") then
+                        if isRaftPart(parent) or isIsland(parent) or isCreature(parent) then
+                            isValid = false
+                        end
                     end
-                    if isValid and isRaftPart(parent) then
-                        if debug then print("Skip (raft):", itemName) end
+                    if isValid and (part.Size.Magnitude > 8 or isUnderwater(part)) then
                         isValid = false
                     end
 
-                    -- Terapkan filter multi
+                    -- Terapkan filter
                     if isValid and not matchFilter(itemName, filter) then
-                        if debug then print("Filter mismatch:", itemName, "filter:", filter) end
+                        if debug then print("Filter mismatch:", itemName) end
                         isValid = false
                     end
 
@@ -360,15 +385,15 @@ task.spawn(function()
                                 -- cooldown
                             else
                                 local collected = false
-                                -- Coba gunakan remote AttemptDrag
+                                -- Coba remote AttemptDrag
                                 if dragRemote then
                                     local success = attemptDragItem(part)
                                     if success then
                                         collected = true
-                                        if debug then print("Collected via AttemptDrag:", itemName) end
+                                        if debug then print("Collected via drag:", itemName) end
                                     end
                                 end
-                                -- Jika remote gagal, gunakan metode paksa
+                                -- Jika gagal, paksa pindahkan part
                                 if not collected then
                                     local success = pcall(function()
                                         part.CFrame = targetPos
@@ -400,7 +425,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 3. ESP (tetap sama)
+-- 3. ESP (FOKUS DEBRISFIELD)
 -- ==========================================
 local ESP = {
     creatures = { enabled = false, highlights = {} },
@@ -419,7 +444,6 @@ local function createHighlight(adornee, color)
 end
 
 local function isDebrisItem(obj)
-    -- Cek apakah objek berada di DebrisField
     local parent = obj.Parent
     while parent do
         if parent:IsA("Model") and parent.Name == "DebrisField" then
@@ -442,12 +466,9 @@ local function addESP(tag, color)
                 local hl = createHighlight(obj, color)
                 table.insert(ESP[tag].highlights, hl)
             elseif tag == "items" and not hasHumanoid then
-                if not isIsland(obj) and not isRaftPart(obj) and obj:FindFirstChildWhichIsA("BasePart") then
-                    -- Fokus pada item di DebrisField
-                    if isDebrisItem(obj) then
-                        local hl = createHighlight(obj, color)
-                        table.insert(ESP[tag].highlights, hl)
-                    end
+                if not isIsland(obj) and not isRaftPart(obj) and isDebrisItem(obj) and obj:FindFirstChildWhichIsA("BasePart") then
+                    local hl = createHighlight(obj, color)
+                    table.insert(ESP[tag].highlights, hl)
                 end
             end
         end
@@ -470,11 +491,9 @@ local function setupESPConnection()
             if ESP.creatures.enabled and hasHumanoid then
                 local hl = createHighlight(obj, Color3.fromRGB(255,50,50))
                 table.insert(ESP.creatures.highlights, hl)
-            elseif ESP.items.enabled and not hasHumanoid and not isIsland(obj) and not isRaftPart(obj) and obj:FindFirstChildWhichIsA("BasePart") then
-                if isDebrisItem(obj) then
-                    local hl = createHighlight(obj, Color3.fromRGB(50,255,50))
-                    table.insert(ESP.items.highlights, hl)
-                end
+            elseif ESP.items.enabled and not hasHumanoid and not isIsland(obj) and not isRaftPart(obj) and isDebrisItem(obj) and obj:FindFirstChildWhichIsA("BasePart") then
+                local hl = createHighlight(obj, Color3.fromRGB(50,255,50))
+                table.insert(ESP.items.highlights, hl)
             end
         end
     end)
@@ -530,7 +549,7 @@ Tabs.Loot:AddToggle({
 
 Tabs.Loot:AddInput({
     Title = "Collect Radius",
-    Default = "50",
+    Default = "30",
     Placeholder = "Radius pengambilan item",
     Callback = function(value)
         local num = tonumber(value)
@@ -573,4 +592,4 @@ Tabs.Visuals:AddToggle({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "DebrisField Optimized Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Final Working Loaded!", 4)

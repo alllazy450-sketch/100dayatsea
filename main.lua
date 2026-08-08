@@ -1,112 +1,188 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AS SEA (INDEX SELECTOR FIX)
+-- W424 HUB | 100 DAYS AT SEA (ULTIMATE EDITION)
 -- ==========================================
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
-local AutoDebrisEnabled = false
-local MaxItemLimit = 5  
-local SelectedIndex = 1
-
--- Daftar pilihan item berdasarkan Index
-local ItemOptions = {
-    [1] = "wood plank",
-    [2] = "crate",
-    [3] = "log"
+-- Global Configurations
+getgenv().W424_Sea = {
+    AutoHarpoon = false,
+    HarpoonRadius = 150,
+    AutoCollect = false,
+    AutoCook = false,
+    ESPItems = false,
+    ESPCreatures = false,
 }
 
-local Window = Rayfield:CreateWindow({
-    Name = "W424 Hub | Index Selector",
-    LoadingTitle = "Memuat W424 Hub...",
-    Theme = "DarkBlue",
+-- Load Fluent UI Library
+local Fluent = loadstring(game:HttpGet("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
+
+local Window = Fluent:CreateWindow({
+    Title = "W424 Hub",
+    SubTitle = "100 Days At Sea - Ultimate",
+    Theme = "Dark",
+    Acrylic = false,
+    Resize = true,
+    Size = UDim2.fromOffset(700, 500),
+    TabWidth = 160,
+    MinimizeKey = Enum.KeyCode.RightControl,
 })
 
-local MainTab = Window:CreateTab("Main Farm", 4483345998)
+-- Tabs Setup
+local Tabs = {
+    Main = Window:CreateTab({ Title = "Main / Combat", Icon = "phosphor-sword-bold" }),
+    Loot = Window:CreateTab({ Title = "Looting", Icon = "phosphor-package-bold" }),
+    Visuals = Window:CreateTab({ Title = "Visuals (ESP)", Icon = "phosphor-eye-bold" }),
+}
 
--- Input untuk Limit Jumlah
-MainTab:CreateInput({
-    Name = "Limit Jumlah Item",
-    PlaceholderText = "Contoh: 5",
-    CurrentValue = "5",
-    Callback = function(Value)
-        local num = tonumber(Value)
-        if num then MaxItemLimit = num end
-    end,
-})
+-- Helper: Get Character RootPart
+local function getHRP()
+    local char = LocalPlayer.Character
+    if char then
+        return char:FindFirstChild("HumanoidRootPart")
+    end
+    return nil
+end
 
--- Dropdown / Pilihan Item menggunakan Index (1, 2, 3)
-MainTab:CreateDropdown({
-    Name = "Pilih Jenis Item (Index)",
-    Options = {"1. wood plank", "2. crate", "3. log"},
-    CurrentOption = "1. wood plank",
-    Flag = "ItemIndexDropdown",
-    Callback = function(Option)
-        -- Mengambil angka index dari string pilihan (misal "1. wood plank" -> index 1)
-        local index = tonumber(string.match(Option, "^(%d+)"))
-        if index then
-            SelectedIndex = index
-        end
-    end,
-})
-
--- Toggle dengan perbaikan agar state on/off benar-benar akurat
-MainTab:CreateToggle({
-    Name = "Auto Collect Custom",
-    CurrentValue = false,
-    Flag = "AutoCollectToggle",
-    Callback = function(Value)
-        AutoDebrisEnabled = Value
-        Rayfield:Notify({
-            Title = "Status Auto Collect",
-            Content = AutoDebrisEnabled and "Fitur Benar-Benar AKTIF" or "Fitur DIMATIKAN",
-            Duration = 2,
-        })
-    end,
-})
-
+-- ==========================================
+-- 1. AUTO HARPOON / COMBAT LOOP (Creatures)
+-- ==========================================
 task.spawn(function()
-    while true do
-        -- Memastikan loop hanya berjalan jika toggle bernilai true
-        if AutoDebrisEnabled == true then
-            local collectedCount = 0
-            local debrisField = Workspace:FindFirstChild("DebrisField")
-            local targetName = ItemOptions[SelectedIndex] or "wood plank"
-            
-            if debrisField then
-                for _, item in ipairs(debrisField:GetChildren()) do
-                    -- Double check status toggle di dalam loop
-                    if AutoDebrisEnabled == false then break end
-                    
-                    if collectedCount >= MaxItemLimit then 
-                        Rayfield:Notify({Title = "Limit Tercapai", Content = "Sudah mengambil " .. MaxItemLimit .. " item."})
-                        AutoDebrisEnabled = false
-                        break 
-                    end
-                    
-                    if item.Name:lower():find(targetName:lower()) then
-                        local char = LocalPlayer.Character
-                        if char and char:FindFirstChild("HumanoidRootPart") then
-                            local hrp = char.HumanoidRootPart
-                            local targetCFrame = hrp.CFrame + (hrp.CFrame.LookVector * 4) + Vector3.new(0, 1, 0)
-                            
-                            if item:IsA("Model") and item.PrimaryPart then
-                                item.PrimaryPart.Anchored = false
-                                item:SetPrimaryPartCFrame(targetCFrame)
-                            elseif item:IsA("BasePart") then
-                                item.Anchored = false
-                                item.CFrame = targetCFrame
+    while task.wait(0.4) do
+        pcall(function()
+            if getgenv().W424_Sea.AutoHarpoon then
+                local hrp = getHRP()
+                if not hrp then return end
+
+                -- Mencari folder Creatures / Enemies / Sharks di Workspace
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if obj:IsA("Model") and (obj.Name:find("Shark") or obj.Name:find("Creature") or obj.Name:find("Fish")) then
+                        local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                        local part = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                        
+                        if humanoid and humanoid.Health > 0 and part then
+                            if (hrp.Position - part.Position).Magnitude <= getgenv().W424_Sea.HarpoonRadius then
+                                -- Simulasi klik / serangan harpoon atau remote damage
+                                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                                if tool then
+                                    tool:Activate()
+                                    pcall(function()
+                                        local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("Attack")
+                                        if remote then remote:FireServer(obj) end
+                                    end)
+                                end
                             end
-                            
-                            collectedCount = collectedCount + 1
-                            task.wait(0.5)
                         end
                     end
                 end
             end
-        end
-        task.wait(1)
+        end)
     end
 end)
+
+-- ==========================================
+-- 2. AUTO COLLECT FLOATING ITEMS (Puing/Kayu Laut)
+-- ==========================================
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(function()
+            if getgenv().W424_Sea.AutoCollect then
+                local hrp = getHRP()
+                if not hrp then return end
+
+                local itemsFolder = Workspace:FindFirstChild("Items") or Workspace:FindFirstChild("Collectibles") or Workspace
+                for _, item in ipairs(itemsFolder:GetChildren()) do
+                    if item:IsA("Model") and item ~= LocalPlayer.Character then
+                        local part = item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")
+                        if part then
+                            -- Tarik item mengapung ke dekat player/rakit
+                            part.CFrame = hrp.CFrame + Vector3.new(0, 2, 0)
+                            part.Velocity = Vector3.zero
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- ==========================================
+-- 3. ESP SYSTEM
+-- ==========================================
+local ESP_Holder = {}
+
+local function toggleESP(state, folderName, tag, color)
+    if not ESP_Holder[tag] then ESP_Holder[tag] = {} end
+    
+    if state then
+        local folder = Workspace:FindFirstChild(folderName) or Workspace
+        for _, obj in ipairs(folder:GetDescendants()) do
+            if obj:IsA("Model") and obj ~= LocalPlayer.Character then
+                pcall(function()
+                    local hl = Instance.new("Highlight")
+                    hl.FillColor = color
+                    hl.OutlineColor = Color3.new(1, 1, 1)
+                    hl.FillTransparency = 0.5
+                    hl.Adornee = obj
+                    hl.Parent = CoreGui
+                    table.insert(ESP_Holder[tag], hl)
+                end)
+            end
+        end
+    else
+        for _, hl in ipairs(ESP_Holder[tag]) do
+            pcall(function() hl:Destroy() end)
+        end
+        ESP_Holder[tag] = {}
+    end
+end
+
+-- ==========================================
+-- UI CONTROLS (FLUENT)
+-- ==========================================
+
+-- MAIN TAB
+Tabs.Main:CreateSection("Combat & Harpoon")
+Tabs.Main:CreateToggle("AutoHarpoonTog", {
+    Title = "Auto Harpoon / Kill Creature",
+    Default = false,
+    Callback = function(v) getgenv().W424_Sea.AutoHarpoon = v end,
+})
+Tabs.Main:CreateSlider("HarpoonRad", {
+    Title = "Harpoon Radius",
+    Min = 20, Max = 500, Default = 150,
+    Callback = function(v) getgenv().W424_Sea.HarpoonRadius = v end,
+})
+
+-- LOOT TAB
+Tabs.Loot:CreateSection("Sea Farming")
+Tabs.Loot:CreateToggle("AutoCollectTog", {
+    Title = "Auto Grab Floating Items / Wood",
+    Default = false,
+    Callback = function(v) getgenv().W424_Sea.AutoCollect = v end,
+})
+
+-- VISUALS TAB
+Tabs.Visuals:CreateSection("ESP Options")
+Tabs.Visuals:CreateToggle("CreatureESP", {
+    Title = "Creatures / Sharks ESP",
+    Default = false,
+    Callback = function(v) toggleESP(v, "Workspace", "creatures", Color3.fromRGB(255, 50, 50)) end,
+})
+Tabs.Visuals:CreateToggle("ItemESP", {
+    Title = "Floating Items ESP",
+    Default = false,
+    Callback = function(v) toggleESP(v, "Workspace", "items", Color3.fromRGB(50, 255, 50)) end,
+})
+
+-- Notification Ready
+Window:SelectTab(1)
+Fluent:Notify({
+    Title = "W424 Sea Edition Loaded!",
+    Content = "Skrip 100 Days At Sea siap digunakan.",
+    Duration = 5,
+})

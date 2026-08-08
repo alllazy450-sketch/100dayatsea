@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (DRAG & TARGET SELECTOR)
+-- W424 HUB | 100 DAYS AT SEA (FINAL DRAG & TARGET)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -86,7 +86,7 @@ task.spawn(function()
                 if obj:IsA("Model") and obj ~= char then
                     local humanoid = obj:FindFirstChildOfClass("Humanoid")
                     if humanoid and humanoid.Health > 0 then
-                        let part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                        -- [FIXED TYPO HERE]
                         local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                         if part and (part.Position - hrp.Position).Magnitude <= radius then
                             remote:FireServer(obj)

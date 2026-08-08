@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FINAL WORKING)
+-- W424 HUB | 100 DAYS AT SEA (ULTIMATE FIX)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -8,16 +8,15 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
-local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
     AutoCollect = false,
-    CollectRadius = 30,
-    CollectFilter = "plank,wood",
-    Debug = true,
+    CollectRadius = 40,
+    WalkSpeed = 16,
+    Noclip = false,
 }
 
 -- ===== BUAT WINDOW UTAMA =====
@@ -25,24 +24,15 @@ local Window = OrvionLib:CreateWindow({
     Title = "W424 Hub | 100 Days At Sea"
 })
 
--- Simpan referensi GUI utama
+-- ===== TOMBOL TOGGLE UI MELAYANG (MOBILE FRIENDLY) =====
 local mainGui = nil
 for _, gui in ipairs(CoreGui:GetChildren()) do
-    if gui:IsA("ScreenGui") and gui.Name == "OrvionLib" then
+    if gui:IsA("ScreenGui") and (gui.Name:find("Orvion") or gui:FindFirstChild("Main")) then
         mainGui = gui
         break
     end
 end
-if not mainGui then
-    for _, gui in ipairs(CoreGui:GetChildren()) do
-        if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") then
-            mainGui = gui
-            break
-        end
-    end
-end
 
--- ===== TOMBOL TOGGLE UI (BUBBLE) =====
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(0, 50, 0, 50)
 toggleButton.Position = UDim2.new(0, 10, 0, 60)
@@ -64,28 +54,16 @@ toggleButton.MouseButton1Click:Connect(function()
     uiVisible = not uiVisible
     if mainGui then
         mainGui.Enabled = uiVisible
-    else
-        for _, gui in ipairs(CoreGui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Name:find("Orvion") then
-                gui.Enabled = uiVisible
-                mainGui = gui
-                break
-            end
-        end
     end
 end)
 
-local dragging = false
-local dragInput, dragStart, startPos
+-- Geser-geser tombol melayang
+local dragging, dragStart, startPos = false, nil, nil
 toggleButton.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = toggleButton.Position
+        dragging, dragStart, startPos = true, input.Position, toggleButton.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
         end)
     end
 end)
@@ -96,325 +74,85 @@ toggleButton.InputChanged:Connect(function(input)
     end
 end)
 
--- ===== TAB =====
+-- ===== TAB MENU =====
 local Tabs = {
-    Combat  = Window:AddTab("Combat"),
-    Loot    = Window:AddTab("Looting"),
-    Visuals = Window:AddTab("Visuals"),
+    Combat    = Window:AddTab("Combat"),
+    Loot      = Window:AddTab("Looting"),
+    Movement  = Window:AddTab("Movement"),
+    Visuals   = Window:AddTab("Visuals"),
 }
 
--- ===== UTILITY =====
 local function getHRP()
     local char = LocalPlayer.Character
-    if char then
-        return char:FindFirstChild("HumanoidRootPart")
-    end
+    if char then return char:FindFirstChild("HumanoidRootPart") end
     return nil
 end
 
-local function isCreature(model)
-    return model:FindFirstChildOfClass("Humanoid") ~= nil
-end
-
-local function isIsland(model)
-    local name = model.Name:lower()
-    if string.find(name, "island") or string.find(name, "spawn") or string.find(name, "terrain") then
-        return true
-    end
-    if model:GetAttribute("Island") or model:GetAttribute("Terrain") then
-        return true
-    end
-    local maxSize = 0
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            local size = part.Size.Magnitude
-            if size > maxSize then maxSize = size end
-        end
-    end
-    if maxSize > 50 then
-        return true
-    end
-    return false
-end
-
-local function isRaftPart(model)
-    if not model then return false end
-    local name = model.Name:lower()
-    if string.find(name, "raft") or string.find(name, "floor") or string.find(name, "base") or string.find(name, "platform") then
-        return true
-    end
-    local parent = model.Parent
-    while parent do
-        if parent:IsA("Model") then
-            local pname = parent.Name:lower()
-            if string.find(pname, "raft") or string.find(pname, "floor") or string.find(pname, "base") or string.find(pname, "platform") then
-                return true
-            end
-            if parent:GetAttribute("Raft") or parent:GetAttribute("Base") then
-                return true
-            end
-        end
-        parent = parent.Parent
-    end
-    return false
-end
-
-local function isUnderwater(part)
-    if part and part:IsA("BasePart") then
-        return part.Position.Y < -3
-    end
-    return false
-end
-
-local function isDebrisFieldItem(part)
-    local parent = part.Parent
-    while parent do
-        if parent:IsA("Model") and parent.Name == "DebrisField" then
-            return true
-        end
-        parent = parent.Parent
-    end
-    return false
-end
-
--- Filter multi
-local function matchFilter(itemName, filter)
-    if filter == "" then return true end
-    itemName = itemName:lower()
-    for word in string.gmatch(filter, "[^,]+") do
-        word = word:gsub("^%s*(.-)%s*$", "%1")
-        if string.find(itemName, word:lower()) then
-            return true
-        end
-    end
-    return false
-end
-
--- ==========================================
--- 1. AUTO HARPOON (sama)
--- ==========================================
-local harpoonRemote = nil
-local function findHarpoonRemote()
+local function getHum()
     local char = LocalPlayer.Character
-    if not char then return nil end
-    local tool = char:FindFirstChildOfClass("Tool")
-    if not tool then return nil end
-    local remote = tool:FindFirstChildWhichIsA("RemoteEvent")
-    if remote then return remote end
-    local possibleNames = {"HarpoonEvent", "Attack", "Fire", "Use"}
-    for _, name in ipairs(possibleNames) do
-        local r = tool:FindFirstChild(name)
-        if r and r:IsA("RemoteEvent") then
-            return r
-        end
-    end
+    if char then return char:FindFirstChildOfClass("Humanoid") end
     return nil
 end
-task.spawn(function()
-    while task.wait(1) do
-        harpoonRemote = findHarpoonRemote()
-    end
-end)
 
+-- ==========================================
+-- 1. AUTO HARPOON (Combat)
+-- ==========================================
 task.spawn(function()
-    while task.wait(0.2) do
+    while task.wait(0.3) do
         pcall(function()
             if not getgenv().W424_Sea.AutoHarpoon then return end
             local hrp = getHRP()
             if not hrp then return end
-            local remote = harpoonRemote
+            
+            local char = LocalPlayer.Character
+            local tool = char and char:FindFirstChildOfClass("Tool")
+            if not tool then return end
+            
+            local remote = tool:FindFirstChildOfClass("RemoteEvent")
             if not remote then return end
+
             local radius = getgenv().W424_Sea.HarpoonRadius or 150
-            local origin = hrp.Position
-            local targets = {}
             for _, obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj ~= LocalPlayer.Character then
+                if obj:IsA("Model") and obj ~= char then
                     local humanoid = obj:FindFirstChildOfClass("Humanoid")
                     if humanoid and humanoid.Health > 0 then
                         local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                        if part and (part.Position - origin).Magnitude <= radius then
-                            table.insert(targets, {model = obj, part = part})
+                        if part and (part.Position - hrp.Position).Magnitude <= radius then
+                            remote:FireServer(obj)
+                            task.wait(0.1)
                         end
                     end
                 end
             end
-            if #targets > 0 then
-                table.sort(targets, function(a, b)
-                    return (a.part.Position - origin).Magnitude < (b.part.Position - origin).Magnitude
-                end)
-                local target = targets[1].model
-                pcall(function()
-                    remote:FireServer(target)
-                end)
-            end
         end)
     end
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (FOKUS DEBRISFIELD + FALLBACK)
+-- 2. AUTO COLLECT (Teleport Player ke Plank/Item)
 -- ==========================================
-local collectedParts = {}
-local debrisField = nil
-local debrisFound = false
-
--- Cari DebrisField
-local function findDebrisField()
-    for _, child in ipairs(Workspace:GetChildren()) do
-        if child:IsA("Model") and child.Name == "DebrisField" then
-            debrisField = child
-            debrisFound = true
-            if getgenv().W424_Sea.Debug then print("DebrisField found!") end
-            return child
-        end
-    end
-    debrisFound = false
-    return nil
-end
-findDebrisField()
-
-Workspace.ChildAdded:Connect(function(child)
-    if child:IsA("Model") and child.Name == "DebrisField" then
-        debrisField = child
-        debrisFound = true
-        if getgenv().W424_Sea.Debug then print("DebrisField added!") end
-    end
-end)
-
--- Remote AttemptDrag
-local dragRemote = nil
-local function findDragRemote()
-    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteFunction") and obj.Name == "AttemptDrag" then
-            dragRemote = obj
-            return obj
-        end
-    end
-    return nil
-end
 task.spawn(function()
-    while task.wait(2) do
-        findDragRemote()
-        if dragRemote then break end
-    end
-end)
-
-local function attemptDragItem(part)
-    if not dragRemote then return false end
-    local model = part.Parent
-    if model and model:IsA("Model") then
-        local success, result = pcall(function()
-            return dragRemote:InvokeServer(model)
-        end)
-        if success then
-            return true
-        end
-    end
-    return false
-end
-
--- Fungsi utama collect
-task.spawn(function()
-    while task.wait(0.25) do
+    while task.wait(0.4) do
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
 
-            local filter = getgenv().W424_Sea.CollectFilter or ""
-            local radius = getgenv().W424_Sea.CollectRadius or 30
-            local origin = hrp.Position
-            local targetPos = hrp.CFrame * CFrame.new(0, 2, 0)
-            local debug = getgenv().W424_Sea.Debug
-
-            -- Kumpulkan part yang akan diproses
-            local partsToCheck = {}
-
-            -- Jika DebrisField ada, fokus ke situ
-            if debrisFound and debrisField then
-                for _, part in ipairs(debrisField:GetDescendants()) do
-                    if part:IsA("BasePart") and part.CanCollide then
-                        table.insert(partsToCheck, part)
-                    end
-                end
-            else
-                -- Fallback: scan seluruh workspace (jarang)
-                for _, part in ipairs(Workspace:GetDescendants()) do
-                    if part:IsA("BasePart") and part.CanCollide and part.Parent ~= LocalPlayer.Character then
-                        -- Hanya ambil part yang ukuran kecil dan tidak di bawah air
-                        if part.Size.Magnitude < 8 and not isUnderwater(part) then
-                            table.insert(partsToCheck, part)
-                        end
-                    end
-                end
-            end
-
-            for _, part in ipairs(partsToCheck) do
-                if part ~= hrp then
-                    local parent = part.Parent
-                    local itemName = ""
-
-                    -- Ambil nama dari model induk (jika ada)
-                    if parent and parent:IsA("Model") then
-                        itemName = parent.Name:lower()
-                    else
-                        itemName = part.Name:lower()
-                    end
-
-                    -- Validasi: bukan raft, bukan island, bukan creature
-                    local isValid = true
-                    if parent and parent:IsA("Model") then
-                        if isRaftPart(parent) or isIsland(parent) or isCreature(parent) then
-                            isValid = false
-                        end
-                    end
-                    if isValid and (part.Size.Magnitude > 8 or isUnderwater(part)) then
-                        isValid = false
-                    end
-
-                    -- Terapkan filter
-                    if isValid and not matchFilter(itemName, filter) then
-                        if debug then print("Filter mismatch:", itemName) end
-                        isValid = false
-                    end
-
-                    if isValid then
-                        local dist = (part.Position - origin).Magnitude
-                        if dist <= radius then
-                            if collectedParts[part] and tick() - collectedParts[part] < 1 then
-                                -- cooldown
-                            else
-                                local collected = false
-                                -- Coba remote AttemptDrag
-                                if dragRemote then
-                                    local success = attemptDragItem(part)
-                                    if success then
-                                        collected = true
-                                        if debug then print("Collected via drag:", itemName) end
-                                    end
-                                end
-                                -- Jika gagal, paksa pindahkan part
-                                if not collected then
-                                    local success = pcall(function()
-                                        part.CFrame = targetPos
-                                        part.Velocity = Vector3.zero
-                                    end)
-                                    if success then
-                                        collected = true
-                                        if debug then print("Collected (force):", itemName, "dist:", dist) end
-                                    else
-                                        if not isUnderwater(part) then
-                                            local tween = TweenService:Create(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {CFrame = part.CFrame * CFrame.new(0,0,2)})
-                                            tween:Play()
-                                            tween.Completed:Wait()
-                                            collected = true
-                                            if debug then print("Collected (tween):", itemName) end
-                                        end
-                                    end
-                                end
-                                if collected then
-                                    collectedParts[part] = tick()
-                                end
+            local radius = getgenv().W424_Sea.CollectRadius or 40
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if not getgenv().W424_Sea.AutoCollect then break end
+                if obj:IsA("Model") and obj ~= LocalPlayer.Character and not obj:FindFirstChildOfClass("Humanoid") then
+                    local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                    if part then
+                        local name = obj.Name:lower()
+                        -- Target item mengapung/kayu/plank
+                        if name:find("plank") or name:find("wood") or name:find("log") or name:find("barrel") or name:find("box") then
+                            local dist = (part.Position - hrp.Position).Magnitude
+                            if dist <= radius and part.Position.Y > -5 then
+                                -- Teleport karakter sebentar ke item lalu kembali/ambil
+                                local oldPos = hrp.CFrame
+                                hrp.CFrame = part.CFrame + Vector3.new(0, 3, 0)
+                                task.wait(0.15)
                             end
                         end
                     end
@@ -425,171 +163,104 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 3. ESP (FOKUS DEBRISFIELD)
+-- 3. MOVEMENT (Noclip & WalkSpeed)
 -- ==========================================
-local ESP = {
-    creatures = { enabled = false, highlights = {} },
-    items     = { enabled = false, highlights = {} },
-    connection = nil,
-}
-
-local function createHighlight(adornee, color)
-    local hl = Instance.new("Highlight")
-    hl.FillColor = color
-    hl.OutlineColor = Color3.new(1,1,1)
-    hl.FillTransparency = 0.5
-    hl.Adornee = adornee
-    hl.Parent = CoreGui
-    return hl
-end
-
-local function isDebrisItem(obj)
-    local parent = obj.Parent
-    while parent do
-        if parent:IsA("Model") and parent.Name == "DebrisField" then
-            return true
-        end
-        parent = parent.Parent
-    end
-    return false
-end
-
-local function addESP(tag, color)
-    if not ESP[tag] then return end
-    local enabled = ESP[tag].enabled
-    if not enabled then return end
-
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj ~= LocalPlayer.Character then
-            local hasHumanoid = isCreature(obj)
-            if tag == "creatures" and hasHumanoid then
-                local hl = createHighlight(obj, color)
-                table.insert(ESP[tag].highlights, hl)
-            elseif tag == "items" and not hasHumanoid then
-                if not isIsland(obj) and not isRaftPart(obj) and isDebrisItem(obj) and obj:FindFirstChildWhichIsA("BasePart") then
-                    local hl = createHighlight(obj, color)
-                    table.insert(ESP[tag].highlights, hl)
-                end
-            end
+RunService.Stepped:Connect(function()
+    if getgenv().W424_Sea.Noclip and LocalPlayer.Character then
+        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
         end
     end
-end
-
-local function removeESP(tag)
-    if not ESP[tag] then return end
-    for _, hl in ipairs(ESP[tag].highlights) do
-        pcall(function() hl:Destroy() end)
-    end
-    ESP[tag].highlights = {}
-end
-
-local function setupESPConnection()
-    if ESP.connection then return end
-    ESP.connection = Workspace.DescendantAdded:Connect(function(obj)
-        if obj:IsA("Model") and obj ~= LocalPlayer.Character then
-            local hasHumanoid = isCreature(obj)
-            if ESP.creatures.enabled and hasHumanoid then
-                local hl = createHighlight(obj, Color3.fromRGB(255,50,50))
-                table.insert(ESP.creatures.highlights, hl)
-            elseif ESP.items.enabled and not hasHumanoid and not isIsland(obj) and not isRaftPart(obj) and isDebrisItem(obj) and obj:FindFirstChildWhichIsA("BasePart") then
-                local hl = createHighlight(obj, Color3.fromRGB(50,255,50))
-                table.insert(ESP.items.highlights, hl)
-            end
-        end
-    end)
-end
-
-local function toggleESP(tag, state, color)
-    if state then
-        ESP[tag].enabled = true
-        addESP(tag, color)
-        setupESPConnection()
-    else
-        ESP[tag].enabled = false
-        removeESP(tag)
-        if not ESP.creatures.enabled and not ESP.items.enabled then
-            if ESP.connection then
-                ESP.connection:Disconnect()
-                ESP.connection = nil
-            end
-        end
-    end
-end
+end)
 
 -- ==========================================
--- MENU UI
+-- UI CONTROLS (ORVION LIB)
 -- ==========================================
+
+-- Combat Tab
 Tabs.Combat:AddToggle({
     Title = "Auto Harpoon / Kill Creature",
     Default = false,
-    Callback = function(state)
-        getgenv().W424_Sea.AutoHarpoon = state
-    end
+    Callback = function(state) getgenv().W424_Sea.AutoHarpoon = state end
 })
-
 Tabs.Combat:AddInput({
     Title = "Harpoon Radius",
     Default = "150",
-    Placeholder = "Masukkan angka radius...",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num then
-            getgenv().W424_Sea.HarpoonRadius = num
-        end
+    Placeholder = "Masukkan angka...",
+    Callback = function(v) 
+        local n = tonumber(v)
+        if n then getgenv().W424_Sea.HarpoonRadius = n end
     end
 })
 
+-- Looting Tab
 Tabs.Loot:AddToggle({
-    Title = "Auto Grab Floating Items / Wood",
+    Title = "Auto Grab Plank / Wood (Teleport)",
     Default = false,
-    Callback = function(state)
-        getgenv().W424_Sea.AutoCollect = state
-    end
+    Callback = function(state) getgenv().W424_Sea.AutoCollect = state end
 })
-
 Tabs.Loot:AddInput({
     Title = "Collect Radius",
-    Default = "30",
-    Placeholder = "Radius pengambilan item",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num then
-            getgenv().W424_Sea.CollectRadius = num
+    Default = "40",
+    Placeholder = "Jangkauan ambil...",
+    Callback = function(v)
+        local n = tonumber(v)
+        if n then getgenv().W424_Sea.CollectRadius = n end
+    end
+})
+
+-- Movement Tab
+Tabs.Movement:AddToggle({
+    Title = "Noclip (Tembus Tembok/Rakit)",
+    Default = false,
+    Callback = function(state) getgenv().W424_Sea.Noclip = state end
+})
+Tabs.Movement:AddInput({
+    Title = "WalkSpeed",
+    Default = "16",
+    Placeholder = "Kecepatan...",
+    Callback = function(v)
+        local n = tonumber(v)
+        local hum = getHum()
+        if n and hum then hum.WalkSpeed = n end
+    end
+})
+
+-- Visuals Tab (ESP Sederhana)
+local espEnabled = false
+local espHighlights = {}
+Tabs.Visuals:AddToggle({
+    Title = "Plank / Wood ESP",
+    Default = false,
+    Callback = function(state)
+        espEnabled = state
+        if not state then
+            for _, hl in ipairs(espHighlights) do pcall(function() hl:Destroy() end) end
+            espHighlights = {}
+        else
+            task.spawn(function()
+                while espEnabled do
+                    task.wait(1)
+                    for _, obj in ipairs(Workspace:GetDescendants()) do
+                        if obj:IsA("Model") and obj ~= LocalPlayer.Character and not obj:FindFirstChildOfClass("Humanoid") then
+                            local name = obj.Name:lower()
+                            if name:find("plank") or name:find("wood") or name:find("log") then
+                                local already = false
+                                for _, h in ipairs(espHighlights) do if h.Adornee == obj then already = true end end
+                                if not already then
+                                    local hl = Instance.new("Highlight")
+                                    hl.FillColor = Color3.fromRGB(50, 255, 50)
+                                    hl.Adornee = obj
+                                    hl.Parent = CoreGui
+                                    table.insert(espHighlights, hl)
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
         end
     end
 })
 
-Tabs.Loot:AddInput({
-    Title = "Item Filter (nama item, pisah koma)",
-    Default = "plank,wood",
-    Placeholder = "cth: plank,wood,log",
-    Callback = function(value)
-        getgenv().W424_Sea.CollectFilter = value or ""
-    end
-})
-
-Tabs.Loot:AddToggle({
-    Title = "Debug Output (Konsol)",
-    Default = true,
-    Callback = function(state)
-        getgenv().W424_Sea.Debug = state
-    end
-})
-
-Tabs.Visuals:AddToggle({
-    Title = "Creatures / Sharks ESP",
-    Default = false,
-    Callback = function(state)
-        toggleESP("creatures", state, Color3.fromRGB(255,50,50))
-    end
-})
-
-Tabs.Visuals:AddToggle({
-    Title = "Floating Items ESP",
-    Default = false,
-    Callback = function(state)
-        toggleESP("items", state, Color3.fromRGB(50,255,50))
-    end
-})
-
-OrvionLib:Notify("W424 Hub", "Final Working Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Ultimate Sea Edition Loaded!", 4)

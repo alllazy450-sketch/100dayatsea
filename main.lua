@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FIXED + FILTER)
+-- W424 HUB | 100 DAYS AT SEA (FINAL)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -7,22 +7,105 @@ local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Knu
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
     AutoCollect = false,
     CollectRadius = 50,
-    CollectFilter = "wood",  -- kata kunci default
+    CollectFilter = "wood",
+    Debug = false,
 }
 
--- ===== BUAT WINDOW =====
+-- ===== BUAT WINDOW UTAMA =====
 local Window = OrvionLib:CreateWindow({
     Title = "W424 Hub | 100 Days At Sea"
 })
 
+-- Simpan referensi GUI utama (asumsi OrvionLib menggunakan ScreenGui)
+local mainGui = nil
+for _, gui in ipairs(CoreGui:GetChildren()) do
+    if gui:IsA("ScreenGui") and gui.Name == "OrvionLib" then -- atau nama default
+        mainGui = gui
+        break
+    end
+end
+if not mainGui then
+    -- Coba cari berdasarkan anak
+    for _, gui in ipairs(CoreGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") then
+            mainGui = gui
+            break
+        end
+    end
+end
+
+-- ===== TOMBOL TOGGLE UI (BUBBLE) =====
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 50, 0, 50)
+toggleButton.Position = UDim2.new(0, 10, 0, 60) -- pojok kiri atas
+toggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+toggleButton.TextColor3 = Color3.new(1,1,1)
+toggleButton.Text = "⚡"
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 24
+toggleButton.BackgroundTransparency = 0.2
+toggleButton.BorderSizePixel = 0
+toggleButton.Parent = CoreGui
+
+-- Buat efek rounded (jika support)
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0) -- lingkaran
+corner.Parent = toggleButton
+
+-- Variabel status UI
+local uiVisible = true
+
+toggleButton.MouseButton1Click:Connect(function()
+    uiVisible = not uiVisible
+    if mainGui then
+        mainGui.Enabled = uiVisible
+    else
+        -- fallback: cari semua ScreenGui dengan nama Orvion
+        for _, gui in ipairs(CoreGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Name:find("Orvion") then
+                gui.Enabled = uiVisible
+                mainGui = gui
+                break
+            end
+        end
+    end
+    toggleButton.Text = uiVisible and "⚡" or "⚡" -- bisa ganti ikon
+end)
+
+-- Tambahkan drag untuk tombol
+local dragging = false
+local dragInput, dragStart, startPos
+
+toggleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = toggleButton.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+toggleButton.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        toggleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- ===== TAB =====
 local Tabs = {
     Combat  = Window:AddTab("Combat"),
     Loot    = Window:AddTab("Looting"),
@@ -42,12 +125,29 @@ local function isCreature(model)
     return model:FindFirstChildOfClass("Humanoid") ~= nil
 end
 
-local function isItem(model)
-    return model:IsA("Model") and model ~= LocalPlayer.Character and not isCreature(model)
+local function isIsland(model)
+    local name = model.Name:lower()
+    if string.find(name, "island") or string.find(name, "spawn") or string.find(name, "terrain") then
+        return true
+    end
+    if model:GetAttribute("Island") or model:GetAttribute("Terrain") then
+        return true
+    end
+    local maxSize = 0
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local size = part.Size.Magnitude
+            if size > maxSize then maxSize = size end
+        end
+    end
+    if maxSize > 50 then
+        return true
+    end
+    return false
 end
 
 -- ==========================================
--- 1. AUTO HARPOON (Remote Event)
+-- 1. AUTO HARPOON
 -- ==========================================
 local harpoonRemote = nil
 
@@ -113,31 +213,70 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (BRING ITEM LOOP + FILTER)
+-- 2. AUTO COLLECT (REVISI + DETECTION WIDE)
 -- ==========================================
+local collectedParts = {}
+
 task.spawn(function()
-    while task.wait(0.1) do
+    while task.wait(0.15) do
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
-
-            local radius = getgenv().W424_Sea.CollectRadius or 50
             local filter = getgenv().W424_Sea.CollectFilter or ""
+            local radius = getgenv().W424_Sea.CollectRadius or 50
             local origin = hrp.Position
             local targetPos = hrp.CFrame * CFrame.new(0, 2, 0)
 
-            for _, obj in ipairs(Workspace:GetDescendants()) do
-                if isItem(obj) then
-                    local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                    if part and part:IsA("BasePart") then
+            for _, part in ipairs(Workspace:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide and part ~= hrp and part.Parent ~= LocalPlayer.Character then
+                    local parent = part.Parent
+                    local isValid = false
+                    local itemName = ""
+
+                    if parent and parent:IsA("Model") and not isCreature(parent) and not isIsland(parent) then
+                        isValid = true
+                        itemName = parent.Name:lower()
+                    elseif parent and parent:IsA("Part") and parent.Parent and parent.Parent:IsA("Model") then
+                        local grandParent = parent.Parent
+                        if grandParent and not isCreature(grandParent) and not isIsland(grandParent) then
+                            isValid = true
+                            itemName = grandParent.Name:lower()
+                        end
+                    else
+                        if part:GetAttribute("Item") or part:GetAttribute("Resource") then
+                            isValid = true
+                            itemName = part.Name:lower()
+                        end
+                    end
+
+                    if not isValid and parent and parent:IsA("Model") and parent:GetAttribute("Item") then
+                        isValid = true
+                        itemName = parent.Name:lower()
+                    end
+
+                    local filterMatch = (filter == "" or string.find(itemName, filter:lower()))
+                    if isValid and filterMatch then
                         local dist = (part.Position - origin).Magnitude
                         if dist <= radius then
-                            -- TERAPKAN FILTER
-                            local itemName = obj.Name:lower()
-                            if filter == "" or string.find(itemName, filter:lower()) then
-                                part.CFrame = targetPos
-                                part.Velocity = Vector3.zero
+                            if collectedParts[part] and tick() - collectedParts[part] < 1 then
+                                -- cooldown
+                            else
+                                local success = pcall(function()
+                                    part.CFrame = targetPos
+                                    part.Velocity = Vector3.zero
+                                end)
+                                if success then
+                                    collectedParts[part] = tick()
+                                    if getgenv().W424_Sea.Debug then
+                                        print("Collected:", part.Name, "from", parent and parent.Name or "nil")
+                                    end
+                                else
+                                    local tween = TweenService:Create(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {CFrame = part.CFrame * CFrame.new(0,0,2)})
+                                    tween:Play()
+                                    tween.Completed:Wait()
+                                    collectedParts[part] = tick()
+                                end
                             end
                         end
                     end
@@ -148,7 +287,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 3. ESP (DUAL TOGGLE, INDEPENDENT)
+-- 3. ESP (DUAL TOGGLE + FILTER PULAU)
 -- ==========================================
 local ESP = {
     creatures = { enabled = false, highlights = {} },
@@ -178,7 +317,7 @@ local function addESP(tag, color)
                 local hl = createHighlight(obj, color)
                 table.insert(ESP[tag].highlights, hl)
             elseif tag == "items" and not hasHumanoid then
-                if obj:FindFirstChildWhichIsA("BasePart") then
+                if not isIsland(obj) and obj:FindFirstChildWhichIsA("BasePart") then
                     local hl = createHighlight(obj, color)
                     table.insert(ESP[tag].highlights, hl)
                 end
@@ -203,7 +342,7 @@ local function setupESPConnection()
             if ESP.creatures.enabled and hasHumanoid then
                 local hl = createHighlight(obj, Color3.fromRGB(255,50,50))
                 table.insert(ESP.creatures.highlights, hl)
-            elseif ESP.items.enabled and not hasHumanoid and obj:FindFirstChildWhichIsA("BasePart") then
+            elseif ESP.items.enabled and not hasHumanoid and not isIsland(obj) and obj:FindFirstChildWhichIsA("BasePart") then
                 local hl = createHighlight(obj, Color3.fromRGB(50,255,50))
                 table.insert(ESP.items.highlights, hl)
             end
@@ -229,9 +368,8 @@ local function toggleESP(tag, state, color)
 end
 
 -- ==========================================
--- MENU UI (TETAP SAMA + TAMBAHAN FILTER)
+-- MENU UI (TETAP)
 -- ==========================================
-
 Tabs.Combat:AddToggle({
     Title = "Auto Harpoon / Kill Creature",
     Default = false,
@@ -272,13 +410,20 @@ Tabs.Loot:AddInput({
     end
 })
 
--- TAMBAHAN INPUT UNTUK FILTER NAMA ITEM
 Tabs.Loot:AddInput({
     Title = "Item Filter (nama item)",
     Default = "wood",
     Placeholder = "Kata kunci (kosongkan untuk semua)",
     Callback = function(value)
         getgenv().W424_Sea.CollectFilter = value or ""
+    end
+})
+
+Tabs.Loot:AddToggle({
+    Title = "Debug Output (Konsol)",
+    Default = false,
+    Callback = function(state)
+        getgenv().W424_Sea.Debug = state
     end
 })
 
@@ -298,4 +443,4 @@ Tabs.Visuals:AddToggle({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Fixed + Filter loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Final version loaded!", 4)

@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FINAL FIX - PLANK)
+-- W424 HUB | 100 DAYS AT SEA (DEBUG + FILTER MULTI)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -16,8 +16,8 @@ getgenv().W424_Sea = {
     HarpoonRadius = 150,
     AutoCollect = false,
     CollectRadius = 50,
-    CollectFilter = "plank",  -- default ke "plank"
-    Debug = false,
+    CollectFilter = "wood,plank",  -- default multiple
+    Debug = true,  -- aktifkan debug untuk melihat output
 }
 
 -- ===== BUAT WINDOW UTAMA =====
@@ -166,6 +166,19 @@ local function isUnderwater(part)
     return false
 end
 
+-- Fungsi untuk memeriksa apakah itemName cocok dengan filter (multi kata dipisah koma)
+local function matchFilter(itemName, filter)
+    if filter == "" then return true end
+    itemName = itemName:lower()
+    for word in string.gmatch(filter, "[^,]+") do
+        word = word:gsub("^%s*(.-)%s*$", "%1") -- trim spasi
+        if string.find(itemName, word:lower()) then
+            return true
+        end
+    end
+    return false
+end
+
 -- ==========================================
 -- 1. AUTO HARPOON
 -- ==========================================
@@ -233,7 +246,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (DENGAN FILTER KETAT)
+-- 2. AUTO COLLECT (DENGAN FILTER MULTI)
 -- ==========================================
 local collectedParts = {}
 
@@ -247,6 +260,7 @@ task.spawn(function()
             local radius = getgenv().W424_Sea.CollectRadius or 50
             local origin = hrp.Position
             local targetPos = hrp.CFrame * CFrame.new(0, 2, 0)
+            local debug = getgenv().W424_Sea.Debug
 
             for _, part in ipairs(Workspace:GetDescendants()) do
                 if part:IsA("BasePart") and part.CanCollide and part ~= hrp and part.Parent ~= LocalPlayer.Character then
@@ -254,7 +268,7 @@ task.spawn(function()
                     local isValid = false
                     local itemName = ""
 
-                    -- Deteksi nama item: cek parent model, lalu atribut, lalu part
+                    -- Deteksi item
                     if parent and parent:IsA("Model") and not isCreature(parent) and not isIsland(parent) and not isRaftPart(parent) then
                         isValid = true
                         itemName = parent.Name:lower()
@@ -266,14 +280,19 @@ task.spawn(function()
                         itemName = parent.Name:lower()
                     end
 
-                    -- Jangan ambil yang di bawah air atau terlalu besar
+                    -- Filter bawah air dan ukuran
                     if isValid and (isUnderwater(part) or part.Size.Magnitude > 8) then
+                        if debug then print("Skip (underwater/too big):", itemName) end
                         isValid = false
                     end
 
-                    -- Filter: cek apakah itemName mengandung filter (case-insensitive)
-                    local filterMatch = (filter == "" or string.find(itemName, filter:lower()))
-                    if isValid and filterMatch then
+                    -- Terapkan filter multi
+                    if isValid and not matchFilter(itemName, filter) then
+                        if debug then print("Filter mismatch:", itemName, "filter:", filter) end
+                        isValid = false
+                    end
+
+                    if isValid then
                         local dist = (part.Position - origin).Magnitude
                         if dist <= radius then
                             if collectedParts[part] and tick() - collectedParts[part] < 1 then
@@ -285,16 +304,14 @@ task.spawn(function()
                                 end)
                                 if success then
                                     collectedParts[part] = tick()
-                                    if getgenv().W424_Sea.Debug then
-                                        print("Collected:", part.Name, "from", parent and parent.Name or "nil")
-                                    end
+                                    if debug then print("Collected:", itemName, "from", parent and parent.Name or "nil", "dist:", dist) end
                                 else
-                                    -- fallback: pindahkan player ke part (hanya jika tidak di bawah air)
                                     if not isUnderwater(part) then
                                         local tween = TweenService:Create(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {CFrame = part.CFrame * CFrame.new(0,0,2)})
                                         tween:Play()
                                         tween.Completed:Wait()
                                         collectedParts[part] = tick()
+                                        if debug then print("Collected (tween):", itemName) end
                                     end
                                 end
                             end
@@ -431,9 +448,9 @@ Tabs.Loot:AddInput({
 })
 
 Tabs.Loot:AddInput({
-    Title = "Item Filter (nama item)",
-    Default = "plank",
-    Placeholder = "Kata kunci (kosongkan untuk semua)",
+    Title = "Item Filter (nama item, pisah koma)",
+    Default = "wood,plank",
+    Placeholder = "cth: wood,plank,log",
     Callback = function(value)
         getgenv().W424_Sea.CollectFilter = value or ""
     end
@@ -441,7 +458,7 @@ Tabs.Loot:AddInput({
 
 Tabs.Loot:AddToggle({
     Title = "Debug Output (Konsol)",
-    Default = false,
+    Default = true,
     Callback = function(state)
         getgenv().W424_Sea.Debug = state
     end
@@ -463,4 +480,4 @@ Tabs.Visuals:AddToggle({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Final Fix - Plank Filter Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Debug + Multi Filter Loaded!", 4)

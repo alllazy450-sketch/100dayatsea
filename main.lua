@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (ORVION EDITION)
+-- W424 HUB | 100 DAYS AT SEA — SMART BAG SYSTEM
 -- ==========================================
 
 local Players = game:GetService("Players")
@@ -16,18 +16,38 @@ local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Knu
 -- KONFIGURASI GLOBAL
 -- ==========================================
 getgenv().W424_Sea = {
-    AutoHarpoon = false,
-    HarpoonRadius = 150,
-    AutoCollect = false,
-    CollectRadius = 100,
-    TargetDestination = "Bonfire",
-    BonfireCF = nil,
-    CraftingCF = nil,
+    -- Posisi
+    RaftCF = nil,
+    StorageCF = nil,
+    ItemSearchRadius = 200,
+    
+    -- Mode
+    AutoMode = "PickUp",
+    
+    -- Toggle
+    AutoPickUp = false,
+    AutoStore = false,
+    AutoUnstore = false,
+    
+    -- Bag (DEFAULT: Old Sack)
+    BagToolName = "Old Sack",
+    AutoEquipBag = false,
+    
+    -- Delay
+    PickUpDelay = 0.3,
+    StoreDelay = 0.5,
 }
 
 -- ==========================================
 -- FUNGSI UTILITAS
 -- ==========================================
+local function notify(title, message, duration)
+    duration = duration or 3
+    pcall(function()
+        OrvionLib:Notify(title, message, duration)
+    end)
+end
+
 local function getHRP()
     local char = LocalPlayer.Character
     if char then
@@ -36,116 +56,198 @@ local function getHRP()
     return nil
 end
 
-local function notify(title, message, duration)
-    duration = duration or 3
+local function getHumanoid()
+    local char = LocalPlayer.Character
+    if char then
+        return char:FindFirstChildOfClass("Humanoid")
+    end
+    return nil
+end
+
+local function equipBag()
+    if not getgenv().W424_Sea.AutoEquipBag then return true end
+    
+    local char = LocalPlayer.Character
+    if not char then return false end
+    
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not backpack then return false end
+    
+    local bag = backpack:FindFirstChild(getgenv().W424_Sea.BagToolName)
+    if bag then
+        local hum = getHumanoid()
+        if hum then
+            hum:EquipTool(bag)
+            task.wait(0.3)
+            return true
+        end
+    end
+    
+    if char:FindFirstChild(getgenv().W424_Sea.BagToolName) then
+        return true
+    end
+    
+    return false
+end
+
+local function getFloatingItems()
+    local items = {}
+    for _, obj in ipairs(CollectionService:GetTagged("Floating_Object")) do
+        if obj and obj.Parent then
+            local part
+            if obj:IsA("BasePart") then
+                part = obj
+            elseif obj:IsA("Model") then
+                part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            end
+            if part then
+                table.insert(items, part)
+            end
+        end
+    end
+    return items
+end
+
+local function getStoredItems()
+    local items = {}
+    local char = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name ~= getgenv().W424_Sea.BagToolName then
+                table.insert(items, tool)
+            end
+        end
+    end
+    
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name ~= getgenv().W424_Sea.BagToolName then
+                table.insert(items, tool)
+            end
+        end
+    end
+    
+    return items
+end
+
+local function safeTouch(part, touchPart)
+    if not part or not part.Parent then return end
+    if not touchPart or not touchPart.Parent then return end
+    
     pcall(function()
-        OrvionLib:Notify(title, message, duration)
+        firetouchinterest(part, touchPart, 0)
+        task.wait(0.05)
+        firetouchinterest(part, touchPart, 1)
     end)
 end
 
-local function formatStatus()
-    local b = getgenv().W424_Sea.BonfireCF and "✅" or "❌"
-    local c = getgenv().W424_Sea.CraftingCF and "✅" or "❌"
-    return string.format("Bonfire: %s | Crafting: %s | Target: %s", 
-        b, c, getgenv().W424_Sea.TargetDestination)
+local function teleportTo(cf)
+    local hrp = getHRP()
+    if hrp and cf then
+        hrp.CFrame = cf
+        return true
+    end
+    return false
 end
 
 -- ==========================================
--- BUAT WINDOW
+-- UI ORVION
 -- ==========================================
 local Window = OrvionLib:CreateWindow({
-    Title = "W424 Hub | 100 Days at Sea",
+    Title = "W424 Hub | Smart Bag System",
     Icon = "rbxassetid://0"
 })
 
 local Tabs = {
-    Main = Window:AddTab("Main"),
+    Auto = Window:AddTab("Auto"),
     Teleport = Window:AddTab("Teleport"),
     Settings = Window:AddTab("Settings"),
 }
 
 -- ==========================================
--- TAB: MAIN
+-- TAB: AUTO (MAIN CONTROLS)
 -- ==========================================
-local StatusPara = Tabs.Main:AddParagraph({
-    Title = "Status",
-    Content = formatStatus(),
+local StatusPara = Tabs.Auto:AddParagraph({
+    Title = "System Status",
+    Content = "Idle | Mode: PickUp",
 })
 
-local function refreshStatus()
-    StatusPara:SetDesc(formatStatus())
+local function updateStatus(text)
+    StatusPara:SetDesc(text or "Idle")
 end
 
--- Toggle: Auto Harpoon
-Tabs.Main:AddToggle({
-    Title = "Auto Harpoon",
-    Default = false,
-    Callback = function(state)
-        getgenv().W424_Sea.AutoHarpoon = state
-        notify("Auto Harpoon", state and "Activated" or "Deactivated", 2)
+-- Mode Selector
+Tabs.Auto:AddDropdown({
+    Title = "Auto Mode",
+    Values = {"PickUp", "Store", "Unstore"},
+    DefaultValue = getgenv().W424_Sea.AutoMode,
+    Callback = function(value)
+        getgenv().W424_Sea.AutoMode = value
+        updateStatus("Mode changed to: " .. value)
     end
 })
 
--- Input: Harpoon Radius
-Tabs.Main:AddInput({
-    Title = "Harpoon Radius",
-    Default = tostring(getgenv().W424_Sea.HarpoonRadius),
-    Placeholder = "Enter radius...",
+-- Toggle: Start Auto (Universal)
+local AutoToggle
+AutoToggle = Tabs.Auto:AddToggle({
+    Title = "Start Auto Loop",
+    Default = false,
+    Callback = function(state)
+        if getgenv().W424_Sea.AutoMode == "PickUp" then
+            getgenv().W424_Sea.AutoPickUp = state
+        elseif getgenv().W424_Sea.AutoMode == "Store" then
+            getgenv().W424_Sea.AutoStore = state
+        else
+            getgenv().W424_Sea.AutoUnstore = state
+        end
+        
+        notify("Auto " .. getgenv().W424_Sea.AutoMode, state and "Started" or "Stopped", 2)
+    end
+})
+
+-- Toggle: Auto Equip Bag
+Tabs.Auto:AddToggle({
+    Title = "Auto Equip Old Sack",
+    Default = false,
+    Callback = function(state)
+        getgenv().W424_Sea.AutoEquipBag = state
+    end
+})
+
+-- Input: Bag Tool Name (Sudah default Old Sack)
+Tabs.Auto:AddInput({
+    Title = "Bag Tool Name",
+    Default = getgenv().W424_Sea.BagToolName,
+    Placeholder = "e.g. Old Sack, Bag...",
+    Callback = function(value)
+        getgenv().W424_Sea.BagToolName = value
+    end
+})
+
+-- Input: Search Radius
+Tabs.Auto:AddInput({
+    Title = "Item Search Radius",
+    Default = tostring(getgenv().W424_Sea.ItemSearchRadius),
     Callback = function(value)
         local num = tonumber(value)
         if num and num > 0 then
-            getgenv().W424_Sea.HarpoonRadius = num
+            getgenv().W424_Sea.ItemSearchRadius = num
         end
-    end
-})
-
--- Toggle: Auto Collect & Drag
-local AutoCollectToggle
-AutoCollectToggle = Tabs.Main:AddToggle({
-    Title = "Auto Collect & Drag",
-    Default = false,
-    Callback = function(state)
-        getgenv().W424_Sea.AutoCollect = state
-        notify("Auto Collect", state and "Activated" or "Deactivated", 2)
-    end
-})
-
--- Input: Collect Radius
-Tabs.Main:AddInput({
-    Title = "Collect Radius",
-    Default = tostring(getgenv().W424_Sea.CollectRadius),
-    Placeholder = "Enter radius...",
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num > 0 then
-            getgenv().W424_Sea.CollectRadius = num
-        end
-    end
-})
-
--- Dropdown: Target Destination
-Tabs.Main:AddDropdown({
-    Title = "Target Destination",
-    Values = {"Bonfire", "Crafting"},
-    DefaultValue = getgenv().W424_Sea.TargetDestination,
-    Callback = function(value)
-        getgenv().W424_Sea.TargetDestination = value
-        refreshStatus()
-        notify("Target Set", "Destination: " .. value, 2)
     end
 })
 
 -- ==========================================
--- TAB: TELEPORT (Set Posisi)
+-- TAB: TELEPORT (SET POSITIONS)
 -- ==========================================
 Tabs.Teleport:AddButton({
-    Title = "📍 Set Bonfire Position",
+    Title = "📍 Set Raft Position",
     Callback = function()
         local hrp = getHRP()
         if hrp then
-            getgenv().W424_Sea.BonfireCF = hrp.CFrame
-            refreshStatus()
-            notify("Position Set", "Bonfire position saved!", 3)
+            getgenv().W424_Sea.RaftCF = hrp.CFrame
+            notify("Position Set", "Raft position saved!", 3)
         else
             notify("Error", "Character not found!", 3)
         end
@@ -153,13 +255,12 @@ Tabs.Teleport:AddButton({
 })
 
 Tabs.Teleport:AddButton({
-    Title = "📍 Set Crafting Position",
+    Title = "📍 Set Storage Position",
     Callback = function()
         local hrp = getHRP()
         if hrp then
-            getgenv().W424_Sea.CraftingCF = hrp.CFrame
-            refreshStatus()
-            notify("Position Set", "Crafting position saved!", 3)
+            getgenv().W424_Sea.StorageCF = hrp.CFrame
+            notify("Position Set", "Storage position saved!", 3)
         else
             notify("Error", "Character not found!", 3)
         end
@@ -168,190 +269,324 @@ Tabs.Teleport:AddButton({
 
 Tabs.Teleport:AddButtonGrid(
     {
-        Title = "Teleport to Bonfire",
+        Title = "TP to Raft",
         Callback = function()
-            if getgenv().W424_Sea.BonfireCF then
-                local hrp = getHRP()
-                if hrp then
-                    hrp.CFrame = getgenv().W424_Sea.BonfireCF
-                    notify("Teleported", "Moved to Bonfire", 2)
-                end
+            if getgenv().W424_Sea.RaftCF then
+                teleportTo(getgenv().W424_Sea.RaftCF)
+                notify("Teleported", "Moved to Raft", 2)
             else
-                notify("Error", "Bonfire position not set!", 3)
+                notify("Error", "Raft position not set!", 3)
             end
         end
     },
     {
-        Title = "Teleport to Crafting",
+        Title = "TP to Storage",
         Callback = function()
-            if getgenv().W424_Sea.CraftingCF then
-                local hrp = getHRP()
-                if hrp then
-                    hrp.CFrame = getgenv().W424_Sea.CraftingCF
-                    notify("Teleported", "Moved to Crafting", 2)
-                end
+            if getgenv().W424_Sea.StorageCF then
+                teleportTo(getgenv().W424_Sea.StorageCF)
+                notify("Teleported", "Moved to Storage", 2)
             else
-                notify("Error", "Crafting position not set!", 3)
+                notify("Error", "Storage position not set!", 3)
             end
         end
     }
 )
 
--- ==========================================
--- TAB: SETTINGS
--- ==========================================
-Tabs.Settings:AddButton({
+Tabs.Teleport:AddButton({
     Title = "Reset All Positions",
     Callback = function()
-        getgenv().W424_Sea.BonfireCF = nil
-        getgenv().W424_Sea.CraftingCF = nil
-        refreshStatus()
+        getgenv().W424_Sea.RaftCF = nil
+        getgenv().W424_Sea.StorageCF = nil
         notify("Reset", "All positions cleared!", 3)
     end
 })
 
 -- ==========================================
--- LOGIC: AUTO HARPOON (OPTIMIZED)
+-- TAB: SETTINGS
 -- ==========================================
-task.spawn(function()
-    while task.wait(0.5) do
-        local success, err = pcall(function()
-            if not getgenv().W424_Sea.AutoHarpoon then return end
-            
-            local hrp = getHRP()
-            if not hrp then return end
-            
-            local char = LocalPlayer.Character
-            local tool = char and char:FindFirstChildOfClass("Tool")
-            if not tool then return end
-            
-            local remote = tool:FindFirstChildOfClass("RemoteEvent")
-            if not remote then return end
-
-            local radius = getgenv().W424_Sea.HarpoonRadius or 150
-            
-            -- Optimasi: scan workspace dengan pengecekan cepat
-            for _, obj in ipairs(Workspace:GetDescendants()) do
-                if not getgenv().W424_Sea.AutoHarpoon then break end
-                
-                if obj:IsA("Model") and obj ~= char then
-                    local humanoid = obj:FindFirstChildOfClass("Humanoid")
-                    if humanoid and humanoid.Health > 0 then
-                        local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                        if part and (part.Position - hrp.Position).Magnitude <= radius then
-                            remote:FireServer(obj)
-                            task.wait(0.15)
-                        end
-                    end
-                end
-            end
-        end)
-        
-        if not success and err then
-            warn("[AutoHarpoon Error]", tostring(err))
+Tabs.Settings:AddInput({
+    Title = "Pick Up Delay",
+    Default = tostring(getgenv().W424_Sea.PickUpDelay),
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0 then
+            getgenv().W424_Sea.PickUpDelay = num
         end
     end
-end)
+})
+
+Tabs.Settings:AddInput({
+    Title = "Store Delay",
+    Default = tostring(getgenv().W424_Sea.StoreDelay),
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num >= 0 then
+            getgenv().W424_Sea.StoreDelay = num
+        end
+    end
+})
 
 -- ==========================================
--- LOGIC: AUTO COLLECT & DRAG (FIXED)
+-- LOGIC: AUTO PICK UP
 -- ==========================================
 task.spawn(function()
     while task.wait(0.8) do
         local success, err = pcall(function()
-            if not getgenv().W424_Sea.AutoCollect then return end
+            if not getgenv().W424_Sea.AutoPickUp then return end
             
             local hrp = getHRP()
             if not hrp then return end
-
-            -- Tentukan target koordinat
-            local targetCF
-            if getgenv().W424_Sea.TargetDestination == "Bonfire" then
-                targetCF = getgenv().W424_Sea.BonfireCF
-            else
-                targetCF = getgenv().W424_Sea.CraftingCF
-            end
-
-            -- Jika belum set koordinat, matikan otomatis & beri tahu user
-            if not targetCF then
-                getgenv().W424_Sea.AutoCollect = false
-                pcall(function() AutoCollectToggle:SetValue(false) end)
-                notify("Warning", "Target position not set! Go to Teleport tab to set it.", 4)
-                return
-            end
-
-            local radius = getgenv().W424_Sea.CollectRadius or 100
-            local floatingObjects = CollectionService:GetTagged("Floating_Object")
             
-            for _, obj in ipairs(floatingObjects) do
-                if not getgenv().W424_Sea.AutoCollect then break end
-                
-                -- Skip jika obj sudah di-destroy
-                if not obj or not obj.Parent then continue end
-                
-                local part
-                if obj:IsA("BasePart") then
-                    part = obj
-                elseif obj:IsA("Model") then
-                    part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            if getgenv().W424_Sea.AutoEquipBag then
+                if not equipBag() then
+                    updateStatus("Old Sack not found!")
+                    return
                 end
-
-                -- Cek ulang validitas part
-                if part and part.Parent then
-                    local dist = (part.Position - hrp.Position).Magnitude
-                    
-                    -- Hanya ambil item di bawah ketinggian 148 (laut)
-                    if dist <= radius and part.Position.Y < 148 then
-                        
-                        -- 1. Teleport ke item (dengan offset agar tidak nge-bug)
-                        hrp.CFrame = part.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.25)
-                        
-                        -- 2. Sentuh item (Touch Began + Ended) — LENGKAP
-                        pcall(function()
-                            firetouchinterest(hrp, part, 0) -- Began
-                            task.wait(0.05)
-                            firetouchinterest(hrp, part, 1) -- Ended
-                        end)
-                        task.wait(0.15)
-                        
-                        -- 3. Bawa player & item ke target
-                        -- FIX: Gunakan CFrame langsung, bukan TweenService (lebih reliable untuk HRP)
-                        hrp.CFrame = targetCF
-                        
-                        -- Bawa item ikut ke target (reset velocity biar tidak nyangkut)
-                        pcall(function()
-                            if part and part.Parent then
-                                part.CFrame = targetCF
-                                part.AssemblyLinearVelocity = Vector3.zero
-                                part.AssemblyAngularVelocity = Vector3.zero
-                            end
-                        end)
-                        
-                        task.wait(0.2)
-                        
-                        -- 4. Lepas item di dalam mesin (Touch Began + Ended) — LENGKAP
-                        pcall(function()
-                            if part and part.Parent then
-                                firetouchinterest(hrp, part, 0) -- Began
-                                task.wait(0.05)
-                                firetouchinterest(hrp, part, 1) -- Ended
-                            end
-                        end)
-                        
-                        task.wait(0.3)
-                        break 
+            end
+            
+            local items = getFloatingItems()
+            local targetItem = nil
+            local minDist = math.huge
+            
+            for _, part in ipairs(items) do
+                local dist = (part.Position - hrp.Position).Magnitude
+                if dist <= getgenv().W424_Sea.ItemSearchRadius and part.Position.Y < 148 then
+                    if dist < minDist then
+                        minDist = dist
+                        targetItem = part
                     end
                 end
             end
+            
+            if not targetItem then
+                updateStatus("No items found in radius")
+                return
+            end
+            
+            updateStatus("Picking up item...")
+            
+            teleportTo(targetItem.CFrame + Vector3.new(0, 3, 0))
+            task.wait(getgenv().W424_Sea.PickUpDelay)
+            
+            safeTouch(hrp, targetItem)
+            task.wait(0.2)
+            
+            if not getgenv().W424_Sea.RaftCF then
+                updateStatus("Raft position not set!")
+                getgenv().W424_Sea.AutoPickUp = false
+                pcall(function() AutoToggle:SetValue(false) end)
+                return
+            end
+            
+            updateStatus("Returning to raft...")
+            teleportTo(getgenv().W424_Sea.RaftCF + Vector3.new(0, 5, 0))
+            task.wait(0.3)
+            
+            local stored = getStoredItems()
+            for _, tool in ipairs(stored) do
+                pcall(function()
+                    if tool.Parent == LocalPlayer.Character then
+                        tool.Parent = Workspace
+                    end
+                end)
+            end
+            
+            updateStatus("Item dropped at raft")
+            task.wait(0.5)
         end)
         
         if not success and err then
-            warn("[AutoCollect Error]", tostring(err))
+            warn("[AutoPickUp Error]", tostring(err))
+            updateStatus("Error: " .. tostring(err))
         end
     end
 end)
 
--- Status awal
-refreshStatus()
-notify("W424 Hub", "Script loaded successfully!", 4)
+-- ==========================================
+-- LOGIC: AUTO STORE
+-- ==========================================
+task.spawn(function()
+    while task.wait(0.8) do
+        local success, err = pcall(function()
+            if not getgenv().W424_Sea.AutoStore then return end
+            
+            local hrp = getHRP()
+            if not hrp then return end
+            
+            if getgenv().W424_Sea.AutoEquipBag then
+                if not equipBag() then
+                    updateStatus("Old Sack not found!")
+                    return
+                end
+            end
+            
+            local items = getFloatingItems()
+            local targetItem = nil
+            local minDist = math.huge
+            
+            for _, part in ipairs(items) do
+                local dist = (part.Position - hrp.Position).Magnitude
+                if dist <= getgenv().W424_Sea.ItemSearchRadius and part.Position.Y < 148 then
+                    if dist < minDist then
+                        minDist = dist
+                        targetItem = part
+                    end
+                end
+            end
+            
+            if not targetItem then
+                updateStatus("No items found")
+                return
+            end
+            
+            updateStatus("Going to item...")
+            
+            teleportTo(targetItem.CFrame + Vector3.new(0, 3, 0))
+            task.wait(getgenv().W424_Sea.PickUpDelay)
+            safeTouch(hrp, targetItem)
+            task.wait(0.2)
+            
+            if not getgenv().W424_Sea.StorageCF then
+                updateStatus("Storage position not set!")
+                getgenv().W424_Sea.AutoStore = false
+                pcall(function() AutoToggle:SetValue(false) end)
+                return
+            end
+            
+            updateStatus("Storing item...")
+            teleportTo(getgenv().W424_Sea.StorageCF + Vector3.new(0, 3, 0))
+            task.wait(getgenv().W424_Sea.StoreDelay)
+            
+            local storagePart = nil
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("BasePart") then
+                    local name = obj.Name:lower()
+                    if name:match("storage") or name:match("bag") or name:match("bonfire") or name:match("sack") then
+                        if (obj.Position - hrp.Position).Magnitude <= 20 then
+                            storagePart = obj
+                            break
+                        end
+                    end
+                end
+            end
+            
+            if storagePart then
+                safeTouch(hrp, storagePart)
+            end
+            
+            local stored = getStoredItems()
+            for _, tool in ipairs(stored) do
+                pcall(function()
+                    if tool.Parent == LocalPlayer.Character then
+                        local chatRemote = game:GetService("Chat"):FindFirstChild("RemoteEvent")
+                        if chatRemote then
+                            chatRemote:FireServer(339183, "DropItem")
+                        end
+                        task.wait(0.1)
+                        tool.Parent = Workspace
+                    end
+                end)
+            end
+            
+            updateStatus("Item stored")
+            task.wait(0.5)
+        end)
+        
+        if not success and err then
+            warn("[AutoStore Error]", tostring(err))
+        end
+    end
+end)
+
+-- ==========================================
+-- LOGIC: AUTO UNSTORE
+-- ==========================================
+task.spawn(function()
+    while task.wait(1) do
+        local success, err = pcall(function()
+            if not getgenv().W424_Sea.AutoUnstore then return end
+            
+            local hrp = getHRP()
+            if not hrp then return end
+            
+            if not getgenv().W424_Sea.StorageCF then
+                updateStatus("Storage position not set!")
+                getgenv().W424_Sea.AutoUnstore = false
+                pcall(function() AutoToggle:SetValue(false) end)
+                return
+            end
+            
+            updateStatus("Going to storage...")
+            teleportTo(getgenv().W424_Sea.StorageCF + Vector3.new(0, 5, 0))
+            task.wait(0.5)
+            
+            local nearbyItems = {}
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("BasePart") or obj:IsA("Model") then
+                    local part = obj:IsA("BasePart") and obj or (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))
+                    if part then
+                        local dist = (part.Position - hrp.Position).Magnitude
+                        if dist <= 15 and obj ~= LocalPlayer.Character then
+                            local name = obj.Name:lower()
+                            if not name:match("storage") and not name:match("bag") and not name:match("bonfire") and not name:match("sack") then
+                                table.insert(nearbyItems, part)
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if #nearbyItems == 0 then
+                updateStatus("No items at storage")
+                task.wait(2)
+                return
+            end
+            
+            local item = nearbyItems[1]
+            updateStatus("Unstoring item...")
+            
+            teleportTo(item.CFrame + Vector3.new(0, 3, 0))
+            task.wait(0.2)
+            safeTouch(hrp, item)
+            task.wait(0.2)
+            
+            if not getgenv().W424_Sea.RaftCF then
+                updateStatus("Raft position not set!")
+                return
+            end
+            
+            updateStatus("Moving to raft...")
+            teleportTo(getgenv().W424_Sea.RaftCF + Vector3.new(0, 5, 0))
+            task.wait(0.3)
+            
+            pcall(function()
+                if item and item.Parent then
+                    item.CFrame = getgenv().W424_Sea.RaftCF
+                    item.AssemblyLinearVelocity = Vector3.zero
+                end
+            end)
+            
+            local stored = getStoredItems()
+            for _, tool in ipairs(stored) do
+                pcall(function()
+                    if tool.Parent == LocalPlayer.Character then
+                        tool.Parent = Workspace
+                    end
+                end)
+            end
+            
+            updateStatus("Item placed at raft")
+            task.wait(0.5)
+        end)
+        
+        if not success and err then
+            warn("[AutoUnstore Error]", tostring(err))
+        end
+    end
+end)
+
+-- ==========================================
+-- INIT
+-- ==========================================
+updateStatus("Ready | Old Sack detected | Select mode and press Start")
+notify("W424 Hub", "Smart Bag System loaded! Bag: Old Sack", 4)

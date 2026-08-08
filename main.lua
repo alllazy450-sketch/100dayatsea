@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (EXACT REMOTE SPY FIX)
+-- W424 HUB | 100 DAYS AT SEA (DRAG & TARGET SELECTOR)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -8,14 +8,15 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local CollectionService = game:GetService("CollectionService")
-local LocalizationService = game:GetService("LocalizationService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
-    AutoDropRemote = false,
-    CollectRadius = 100,
+    AutoCollect = false,
+    CollectRadius = 80,
+    TargetDestination = "Crafting", -- Pilihan: "Crafting" atau "Campfire"
 }
 
 -- ===== BUAT WINDOW UTAMA =====
@@ -54,7 +55,7 @@ end)
 -- ===== TAB MENU =====
 local Tabs = {
     Combat  = Window:AddTab("Combat"),
-    Loot    = Window:AddTab("Auto Drop Remote"),
+    Loot    = Window:AddTab("Looting"),
 }
 
 local function getHRP()
@@ -85,6 +86,7 @@ task.spawn(function()
                 if obj:IsA("Model") and obj ~= char then
                     local humanoid = obj:FindFirstChildOfClass("Humanoid")
                     if humanoid and humanoid.Health > 0 then
+                        let part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                         local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                         if part and (part.Position - hrp.Position).Magnitude <= radius then
                             remote:FireServer(obj)
@@ -98,20 +100,20 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO GIVE UP OWNERSHIP (Berdasarkan Remote Spy Asli)
+-- 2. AUTO COLLECT & DRAG TO SELECTED TARGET
 -- ==========================================
 task.spawn(function()
-    while task.wait(0.6) do
+    while task.wait(1) do
         pcall(function()
-            if not getgenv().W424_Sea.AutoDropRemote then return end
+            if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
 
-            local radius = getgenv().W424_Sea.CollectRadius or 100
-            local remoteEvent = LocalizationService:FindFirstChild("RemoteEvent")
+            local startPos = hrp.CFrame
+            local radius = getgenv().W424_Sea.CollectRadius or 80
 
             for _, obj in ipairs(CollectionService:GetTagged("Floating_Object")) do
-                if not getgenv().W424_Sea.AutoDropRemote then break end
+                if not getgenv().W424_Sea.AutoCollect then break end
                 
                 local part = nil
                 if obj:IsA("BasePart") then
@@ -121,24 +123,40 @@ task.spawn(function()
                 end
 
                 if part then
-                    local dist = (part.Position - hrp.Position).Magnitude
-                    -- Pastikan item ada di area laut
+                    local dist = (part.Position - startPos.Position).Magnitude
                     if dist <= radius and part.Position.Y < 148 then
                         
-                        if remoteEvent then
-                            -- Format argumen persis seperti hasil Spy manual kamu
-                            local args = {
-                                407115, -- ID referensi game
-                                "GiveUpOwnership",
-                                obj,    -- Objek item laut yang terdeteksi
-                                "~v-0.0001,-0.0001,0" -- Koordinat default drop
-                            }
-                            
-                            remoteEvent:FireServer(unpack(args))
+                        -- Tentukan titik akhir tujuan di atas rakit berdasarkan Dropdown
+                        local destinationCF = startPos + Vector3.new(0, 3, 0) -- Default dekat player
+                        if getgenv().W424_Sea.TargetDestination == "Crafting" then
+                            destinationCF = startPos + Vector3.new(-3, 3, 0) -- Geser ke area mesin crafting
+                        elseif getgenv().W424_Sea.TargetDestination == "Campfire" then
+                            destinationCF = startPos + Vector3.new(3, 3, 0)  -- Geser ke area campfire
                         end
+
+                        -- LANGKAH 1: Teleport ke item di laut
+                        hrp.CFrame = part.CFrame + Vector3.new(0, 2, 0)
+                        task.wait(0.2)
                         
-                        task.wait(0.4)
-                        break
+                        -- LANGKAH 2: Sentuh item untuk memicu status drag
+                        firetouchinterest(hrp, part, 0)
+                        firetouchinterest(hrp, part, 1)
+                        task.wait(0.1)
+                        
+                        -- LANGKAH 3: Tween bawa item ke titik tujuan pilihan (Crafting / Campfire)
+                        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear)
+                        local tween = TweenService:Create(hrp, tweenInfo, {CFrame = destinationCF})
+                        local partTween = TweenService:Create(part, tweenInfo, {CFrame = destinationCF + Vector3.new(0, 0, -2)})
+                        
+                        tween:Play()
+                        partTween:Play()
+                        partTween.Completed:Wait()
+                        
+                        -- LANGKAH 4: Drop / Lepas sentuhan di area tujuan
+                        firetouchinterest(hrp, part, 1)
+                        task.wait(0.2)
+                        
+                        break 
                     end
                 end
             end
@@ -167,19 +185,28 @@ Tabs.Combat:AddInput({
 })
 
 Tabs.Loot:AddToggle({
-    Title = "Auto Remote Drop Items",
+    Title = "Auto Drag to Target",
     Default = false,
-    Callback = function(state) getgenv().W424_Sea.AutoDropRemote = state end
+    Callback = function(state) getgenv().W424_Sea.AutoCollect = state end
+})
+
+Tabs.Loot:AddDropdown({
+    Title = "Pilih Tujuan Item",
+    Values = {"Crafting", "Campfire"},
+    DefaultValue = "Crafting",
+    Callback = function(value)
+        getgenv().W424_Sea.TargetDestination = value
+    end
 })
 
 Tabs.Loot:AddInput({
-    Title = "Detection Radius",
-    Default = "100",
-    Placeholder = "Jangkauan...",
+    Title = "Collect Radius",
+    Default = "80",
+    Placeholder = "Jangkauan ambil...",
     Callback = function(v)
         local n = tonumber(v)
         if n then getgenv().W424_Sea.CollectRadius = n end
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Remote Spy Hook Applied!", 4)
+OrvionLib:Notify("W424 Hub", "Drag with Target Selector Loaded!", 4)

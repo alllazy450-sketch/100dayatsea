@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FIXED DRAG & DROP)
+-- W424 HUB | 100 DAYS AS SEA (REMOTE HOOK EDITION)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -8,13 +8,15 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local CollectionService = game:GetService("CollectionService")
+local SocialService = game:GetService("SocialService")
 local LocalPlayer = Players.LocalPlayer
 
 getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
-    AutoCollect = false,
-    CollectRadius = 80,
+    AutoSubmit = false,
+    SubmitTarget = "Crafting", -- "Crafting" atau "Campfire"
+    CollectRadius = 100,
 }
 
 -- ===== BUAT WINDOW UTAMA =====
@@ -53,7 +55,7 @@ end)
 -- ===== TAB MENU =====
 local Tabs = {
     Combat  = Window:AddTab("Combat"),
-    Loot    = Window:AddTab("Looting"),
+    Loot    = Window:AddTab("Auto Submit"),
 }
 
 local function getHRP()
@@ -97,20 +99,20 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (Teleport -> Touch/Drag -> Return -> Drop)
+-- 2. AUTO SUBMIT (Kirim Item Laut via RemoteEvent ke Crafting/Campfire)
 -- ==========================================
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(0.6) do
         pcall(function()
-            if not getgenv().W424_Sea.AutoCollect then return end
+            if not getgenv().W424_Sea.AutoSubmit then return end
             local hrp = getHRP()
             if not hrp then return end
 
-            local raftPosition = hrp.CFrame
-            local radius = getgenv().W424_Sea.CollectRadius or 80
+            local radius = getgenv().W424_Sea.CollectRadius or 100
+            local remoteEvent = SocialService:WaitForChild("RemoteEvent")
 
             for _, obj in ipairs(CollectionService:GetTagged("Floating_Object")) do
-                if not getgenv().W424_Sea.AutoCollect then break end
+                if not getgenv().W424_Sea.AutoSubmit then break end
                 
                 local part = nil
                 if obj:IsA("BasePart") then
@@ -120,39 +122,29 @@ task.spawn(function()
                 end
 
                 if part then
-                    local dist = (part.Position - raftPosition.Position).Magnitude
-                    -- Pastikan item ada di air
+                    local dist = (part.Position - hrp.Position).Magnitude
                     if dist <= radius and part.Position.Y < 148 then
                         
-                        -- SIMPAN POSISI ITEM SEBELUM DI-DRAG
-                        local itemOriginalCF = part.CFrame
-
-                        -- LANGKAH 1: Teleport ke item
-                        hrp.CFrame = part.CFrame + Vector3.new(0, 2, 0)
-                        task.wait(0.2)
-                        
-                        -- LANGKAH 2: Sentuh item untuk memicu sistem drag game
-                        firetouchinterest(hrp, part, 0)
-                        firetouchinterest(hrp, part, 1)
-                        task.wait(0.2)
-                        
-                        -- LANGKAH 3: Paksa posisi item ikut menempel/mendekat ke player saat balik ke rakit
-                        local startTime = tick()
-                        while tick() - startTime < 0.6 do
-                            if part and hrp then
-                                part.CFrame = hrp.CFrame + Vector3.new(0, 0, -3) -- Posisi di depan player (seperti sedang di-drag)
-                                part.Velocity = Vector3.zero
-                            end
-                            hrp.CFrame = raftPosition -- Kembali ke rakit perlahan/langsung
-                            task.run(task.wait)
+                        -- Tentukan koordinat tujuan berdasarkan pilihan menu
+                        -- (Kamu bisa sesuaikan string koordinat target berdasarkan hasil spy masing-masing mesin)
+                        local targetCoord = "~v8.662,-4.5933,-0.1604" -- Default Crafting/Mesin Kayu
+                        if getgenv().W424_Sea.SubmitTarget == "Campfire" then
+                            targetCoord = "~v5.123,-4.1200,1.4500" -- Contoh koordinat Campfire (bisa diganti dari spy campfire)
                         end
 
-                        -- LANGKAH 4: Lepas / Drop item agar jatuh diam di rakit
-                        firetouchinterest(hrp, part, 1)
+                        -- Bungkus argumen sesuai hasil Remote Spy asli game
+                        local args = {
+                            math.random(100000, 999999), -- ID unik acak agar tidak stuck
+                            "GiveUpOwnership",
+                            obj, -- Kirim objek item lautnya langsung
+                            targetCoord
+                        }
+
+                        -- Tembak langsung ke server game!
+                        remoteEvent:FireServer(unpack(args))
                         
-                        -- Beri sedikit jeda agar item stabil mendarat di lantai rakit
-                        task.wait(0.5)
-                        break 
+                        task.wait(0.3) -- Jeda antar pengiriman item
+                        break
                     end
                 end
             end
@@ -181,19 +173,28 @@ Tabs.Combat:AddInput({
 })
 
 Tabs.Loot:AddToggle({
-    Title = "Auto Touch & Drag to Raft",
+    Title = "Auto Send Floating Items to Target",
     Default = false,
-    Callback = function(state) getgenv().W424_Sea.AutoCollect = state end
+    Callback = function(state) getgenv().W424_Sea.AutoSubmit = state end
+})
+
+Tabs.Loot:AddDropdown({
+    Title = "Pilih Tujuan Kirim Item",
+    Values = {"Crafting", "Campfire"},
+    DefaultValue = "Crafting",
+    Callback = function(value)
+        getgenv().W424_Sea.SubmitTarget = value
+    end
 })
 
 Tabs.Loot:AddInput({
-    Title = "Collect Radius",
-    Default = "80",
-    Placeholder = "Jangkauan ambil...",
+    Title = "Detection Radius",
+    Default = "100",
+    Placeholder = "Jangkauan...",
     Callback = function(v)
         local n = tonumber(v)
         if n then getgenv().W424_Sea.CollectRadius = n end
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Drag & Drop Fixed Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Remote Spy Hook Loaded!", 4)

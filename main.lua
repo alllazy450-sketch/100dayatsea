@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (TELEPORT & DROP LOOP)
+-- W424 HUB | 100 DAYS AT SEA (FIXED TIMING LOOP)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -97,16 +97,16 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (Teleport -> Ambil -> Balik ke Raft -> Drop)
+-- 2. AUTO COLLECT (Fixed Delay & Sequence)
 -- ==========================================
 task.spawn(function()
-    while task.wait(0.8) do
+    while task.wait(1.2) do -- Jeda antar siklus ambil item diperlambat sedikit agar stabil
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
 
-            -- Simpan posisi awal di rakit sebelum pergi ngambil item
+            -- Simpan posisi aman di rakit
             local raftPosition = hrp.CFrame
             local radius = getgenv().W424_Sea.CollectRadius or 80
 
@@ -122,32 +122,35 @@ task.spawn(function()
 
                 if part then
                     local dist = (part.Position - raftPosition.Position).Magnitude
-                    -- Pastikan item ada di air dan dalam radius
                     if dist <= radius and part.Position.Y < 148 then
                         
-                        -- LANGKAH 1: Teleport ke item di air
-                        hrp.CFrame = part.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.2)
+                        -- LANGKAH 1: Teleport ke dekat item
+                        hrp.CFrame = part.CFrame + Vector3.new(0, 2, 0)
+                        task.wait(0.5) -- Beri waktu karakter diam sejenak di item
                         
-                        -- LANGKAH 2: Simulasi interaksi/touch agar game mendeteksi item terpegang
-                        firetouchinterest(hrp, part, 0)
-                        firetouchinterest(hrp, part, 1)
+                        -- LANGKAH 2: Kirim sinyal sentuh berkali-kali agar server merespons
+                        pcall(function()
+                            firetouchinterest(hrp, part, 0)
+                            task.wait(0.1)
+                            firetouchinterest(hrp, part, 1)
+                        end)
                         
-                        -- LANGKAH 3: Kembali ke posisi rakit semula
+                        task.wait(0.3) -- Jeda sebelum balik ke rakit
+                        
+                        -- LANGKAH 3: Pulang kembali ke rakit
                         hrp.CFrame = raftPosition
-                        task.wait(0.2)
+                        task.wait(0.3)
                         
-                        -- LANGKAH 4: Drop item (melepas tool/objek yang dipegang jika masuk inventory tangan)
+                        -- LANGKAH 4: Drop item jika masuk ke tangan karakter
                         pcall(function()
                             local char = LocalPlayer.Character
                             local heldTool = char and char:FindFirstChildOfClass("Tool")
                             if heldTool then
-                                -- Jika game punya remote drop atau cukup unequip/parent ke workspace
                                 heldTool.Parent = Workspace
                             end
                         end)
                         
-                        break -- Ambil satu-satu per siklus agar stabil
+                        break -- Proses 1 item per putaran agar tidak bug
                     end
                 end
             end
@@ -191,4 +194,4 @@ Tabs.Loot:AddInput({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Teleport & Drop Loop Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Timing Fixed Edition Loaded!", 4)

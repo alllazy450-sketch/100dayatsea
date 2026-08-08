@@ -1,21 +1,21 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA — PHYSICAL DRAG v4
+-- W424 HUB | 100 DAYS AT SEA — REMOTE DRAG v5
 -- ==========================================
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
-local RunService = game:GetService("RunService")
+local LocalizationService = game:GetService("LocalizationService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
 -- ANTI-DOUBLE LOAD
 -- ==========================================
-if getgenv().W424_Running then
-    getgenv().W424_Running = false
-    task.wait(1)
+if getgenv().W424_Kill then
+    getgenv().W424_Kill = true
+    task.wait(1.2)
 end
-getgenv().W424_Running = true
+getgenv().W424_Kill = false
 
 -- ==========================================
 -- LOAD ORVION LIBRARY
@@ -23,23 +23,34 @@ getgenv().W424_Running = true
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
 
 -- ==========================================
--- KONFIGURASI
+-- REMOTE REFERENCES (DARI REMOTE SPY TERBARU!)
+-- ==========================================
+local RemoteEvent = LocalizationService:WaitForChild("RemoteEvent")
+local RemoteFunction = LocalizationService:WaitForChild("RemoteFunction")
+
+-- ==========================================
+-- KONFIGURASI (UPDATE JIKA ID BERUBAH!)
 -- ==========================================
 getgenv().W424_Config = {
+    -- ID Remote (dari spy terbaru — bisa berubah tiap sesi!)
+    AttemptDragId = 315265,
+    GiveUpId = 316175,
+    
+    -- Posisi
     RaftCF = nil,
     StorageCF = nil,
     ItemSearchRadius = 300,
-    Mode = "PickUp",
+    
+    -- Mode
+    Mode = "PickUp",      -- "PickUp" | "Store" | "Unstore"
     Active = false,
-    Delay = 0.1,           -- Loop cepat untuk smooth follow
-    FollowOffset = Vector3.new(0, -2, 2), -- Posisi item relatif ke player
+    Delay = 0.6,
 }
 
 -- ==========================================
 -- STATE
 -- ==========================================
 local DraggedItem = nil
-local FollowConnection = nil
 
 -- ==========================================
 -- UTILITAS
@@ -53,8 +64,11 @@ local function getHRP()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
-local function getFloatingItems()
+-- Cari item di DebrisField + Floating_Object
+local function getItems()
     local items = {}
+    
+    -- Cari di CollectionService (Floating_Object)
     for _, obj in ipairs(CollectionService:GetTagged("Floating_Object")) do
         if obj and obj.Parent then
             local part = obj:IsA("BasePart") and obj or (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))
@@ -63,18 +77,41 @@ local function getFloatingItems()
             end
         end
     end
+    
+    -- Cari di DebrisField (dari remote spy: workspace.DebrisField.[ID].Plank)
+    local debris = Workspace:FindFirstChild("DebrisField")
+    if debris then
+        for _, folder in ipairs(debris:GetChildren()) do
+            if folder:IsA("Model") or folder:IsA("Folder") then
+                for _, child in ipairs(folder:GetChildren()) do
+                    if child:IsA("BasePart") then
+                        table.insert(items, child)
+                    elseif child:IsA("Model") then
+                        local part = child.PrimaryPart or child:FindFirstChildWhichIsA("BasePart")
+                        if part then
+                            table.insert(items, part)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
     return items
 end
 
+-- Cari item di sekitar storage (untuk unstore)
 local function getItemsNearStorage()
     local hrp = getHRP()
     if not hrp then return {} end
+    
     local items = {}
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj ~= hrp and not obj:IsDescendantOf(LocalPlayer.Character) then
             local dist = (obj.Position - hrp.Position).Magnitude
-            if dist <= 18 then
+            if dist <= 20 then
                 local n = string.lower(obj.Name)
+                -- Hindari part environment
                 if not n:match("baseplate") and not n:match("water") 
                    and not n:match("terrain") and not n:match("raft") 
                    and not n:match("floor") and not n:match("wood") then
@@ -87,48 +124,38 @@ local function getItemsNearStorage()
 end
 
 -- ==========================================
--- DRAG SYSTEM (FISIK)
+-- REMOTE FUNCTIONS
 -- ==========================================
-local function startFollowing(item)
-    if FollowConnection then FollowConnection:Disconnect() end
-    DraggedItem = item
-    
-    FollowConnection = RunService.Heartbeat:Connect(function()
-        if not getgenv().W424_Running then
-            FollowConnection:Disconnect()
-            return
-        end
-        if DraggedItem and DraggedItem.Parent then
-            local hrp = getHRP()
-            if hrp then
-                DraggedItem.CFrame = hrp.CFrame + getgenv().W424_Config.FollowOffset
-                DraggedItem.AssemblyLinearVelocity = Vector3.zero
-                DraggedItem.AssemblyAngularVelocity = Vector3.zero
-                DraggedItem.CanCollide = false
-            end
-        else
-            DraggedItem = nil
-        end
+local function attemptDrag(item)
+    if not item or not item.Parent then return false end
+    local ok = pcall(function()
+        RemoteFunction:InvokeServer(
+            getgenv().W424_Config.AttemptDragId,
+            "AttemptDrag",
+            item
+        )
     end)
+    return ok
 end
 
-local function stopFollowing()
-    if FollowConnection then
-        FollowConnection:Disconnect()
-        FollowConnection = nil
-    end
-    if DraggedItem and DraggedItem.Parent then
-        DraggedItem.CanCollide = true
-        DraggedItem.AssemblyLinearVelocity = Vector3.zero
-    end
-    DraggedItem = nil
+local function giveUpOwnership(item)
+    if not item or not item.Parent then return false end
+    local ok = pcall(function()
+        RemoteEvent:FireServer(
+            getgenv().W424_Config.GiveUpId,
+            "GiveUpOwnership",
+            item,
+            "~v0,0,0"
+        )
+    end)
+    return ok
 end
 
 -- ==========================================
 -- UI ORVION
 -- ==========================================
 local Window = OrvionLib:CreateWindow({
-    Title = "W424 Hub | Physical Drag v4",
+    Title = "W424 Hub | Remote Drag v5",
     Icon = "rbxassetid://0"
 })
 
@@ -159,17 +186,34 @@ Tabs.Main:AddDropdown({
 })
 
 -- Toggle
-local AutoToggle
-AutoToggle = Tabs.Main:AddToggle({
+Tabs.Main:AddToggle({
     Title = "Start Auto",
     Default = false,
     Callback = function(state)
         getgenv().W424_Config.Active = state
-        if not state then
-            stopFollowing()
-        end
+        if not state then DraggedItem = nil end
         status("Mode: " .. getgenv().W424_Config.Mode .. " | " .. (state and "ON" or "OFF"))
         notify("Auto", state and "Started" or "Stopped", 2)
+    end
+})
+
+-- Input: AttemptDrag ID
+Tabs.Main:AddInput({
+    Title = "AttemptDrag ID",
+    Default = tostring(getgenv().W424_Config.AttemptDragId),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n then getgenv().W424_Config.AttemptDragId = n end
+    end
+})
+
+-- Input: GiveUp ID
+Tabs.Main:AddInput({
+    Title = "GiveUpOwnership ID",
+    Default = tostring(getgenv().W424_Config.GiveUpId),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n then getgenv().W424_Config.GiveUpId = n end
     end
 })
 
@@ -237,28 +281,76 @@ Tabs.Teleport:AddButtonGrid(
 -- DEBUG TAB
 -- ==========================================
 Tabs.Debug:AddButton({
-    Title = "🔍 Scan Floating Items",
+    Title = "🔍 Scan Items (DebrisField)",
     Callback = function()
-        local items = getFloatingItems()
-        notify("Debug", #items .. " floating items found", 2)
+        local items = getItems()
+        local msg = "Found " .. #items .. " items:\n"
+        for i = 1, math.min(8, #items) do
+            local parentName = items[i].Parent and items[i].Parent.Name or "nil"
+            msg = msg .. items[i].Name .. " [" .. parentName .. "]\n"
+        end
+        notify("Debug", #items .. " items found", 2)
+        status(msg)
     end
 })
 
 Tabs.Debug:AddButton({
-    Title = "🛑 Emergency Stop Drag",
+    Title = "🧪 Test Remote Connection",
     Callback = function()
-        stopFollowing()
-        getgenv().W424_Config.Active = false
-        pcall(function() AutoToggle:SetValue(false) end)
-        notify("Emergency", "Drag stopped!", 2)
+        local ok1 = pcall(function() LocalizationService:WaitForChild("RemoteEvent", 2) end)
+        local ok2 = pcall(function() LocalizationService:WaitForChild("RemoteFunction", 2) end)
+        notify("Debug", "Event: " .. (ok1 and "OK" or "FAIL") .. " | Function: " .. (ok2 and "OK" or "FAIL"), 3)
+    end
+})
+
+Tabs.Debug:AddButton({
+    Title = "🧪 Test Drag Nearest Item",
+    Callback = function()
+        local hrp = getHRP()
+        if not hrp then return end
+        
+        local items = getItems()
+        local nearest = nil
+        local minDist = math.huge
+        
+        for _, part in ipairs(items) do
+            local dist = (part.Position - hrp.Position).Magnitude
+            if dist < minDist then
+                minDist = dist
+                nearest = part
+            end
+        end
+        
+        if nearest then
+            hrp.CFrame = nearest.CFrame + Vector3.new(0, 4, 0)
+            task.wait(0.2)
+            local ok = attemptDrag(nearest)
+            notify("Test", ok and "Drag sent to " .. nearest.Name or "Drag failed!", 3)
+            DraggedItem = ok and nearest or nil
+        else
+            notify("Test", "No items found!", 3)
+        end
+    end
+})
+
+Tabs.Debug:AddButton({
+    Title = "🧪 Test Drop Current Item",
+    Callback = function()
+        if DraggedItem then
+            local ok = giveUpOwnership(DraggedItem)
+            notify("Test", ok and "Dropped!" or "Drop failed!", 3)
+            DraggedItem = nil
+        else
+            notify("Test", "No item being dragged!", 3)
+        end
     end
 })
 
 -- ==========================================
--- MAIN LOOP — PHYSICAL DRAG
+-- MAIN LOOP
 -- ==========================================
 task.spawn(function()
-    while getgenv().W424_Running do
+    while not getgenv().W424_Kill do
         task.wait(getgenv().W424_Config.Delay)
         
         if not getgenv().W424_Config.Active then
@@ -278,29 +370,28 @@ task.spawn(function()
         -- ==========================================
         if mode == "PickUp" then
             local ok, err = pcall(function()
-                -- Jika sedang drag, lanjutkan ke raft
+                -- Jika sedang drag item, bawa ke raft lalu drop
                 if DraggedItem and DraggedItem.Parent then
                     if not getgenv().W424_Config.RaftCF then
                         status("Raft position not set!")
                         getgenv().W424_Config.Active = false
-                        stopFollowing()
                         return
                     end
                     
-                    status("Moving to raft with item...")
+                    status("Moving to raft with " .. DraggedItem.Name .. "...")
                     hrp.CFrame = getgenv().W424_Config.RaftCF + Vector3.new(0, 5, 0)
-                    task.wait(0.5)
+                    task.wait(0.4)
                     
-                    -- Lepas item di raft
-                    stopFollowing()
-                    task.wait(0.3)
-                    status("Item dropped at raft")
-                    task.wait(0.5)
+                    -- Drop item
+                    giveUpOwnership(DraggedItem)
+                    DraggedItem = nil
+                    status("Item dropped at raft!")
+                    task.wait(0.6)
                     return
                 end
                 
                 -- Cari item baru
-                local items = getFloatingItems()
+                local items = getItems()
                 local target = nil
                 local minDist = math.huge
                 
@@ -319,29 +410,27 @@ task.spawn(function()
                     return
                 end
                 
-                status("Grabbing: " .. target.Name)
+                status("Going to: " .. target.Name)
                 
                 -- Teleport ke item
                 hrp.CFrame = target.CFrame + Vector3.new(0, 4, 0)
-                task.wait(0.2)
+                task.wait(0.3)
                 
-                -- Pick up via touch
-                pcall(function()
-                    firetouchinterest(hrp, target, 0)
-                    task.wait(0.1)
-                    firetouchinterest(hrp, target, 1)
-                end)
+                -- Remote Drag!
+                local dragged = attemptDrag(target)
+                if dragged then
+                    DraggedItem = target
+                    status("Dragging " .. target.Name .. "!")
+                else
+                    status("Drag failed on " .. target.Name)
+                end
                 
-                task.wait(0.2)
-                
-                -- Mulai follow (bawa item)
-                startFollowing(target)
-                status("Dragging " .. target.Name .. " to raft...")
+                task.wait(0.3)
             end)
             
             if not ok then
                 warn("[PickUp Error]", err)
-                stopFollowing()
+                DraggedItem = nil
             end
             
         -- ==========================================
@@ -353,22 +442,21 @@ task.spawn(function()
                     if not getgenv().W424_Config.StorageCF then
                         status("Storage position not set!")
                         getgenv().W424_Config.Active = false
-                        stopFollowing()
                         return
                     end
                     
                     status("Moving to storage...")
-                    hrp.CFrame = getgenv().W424_Config.StorageCF + Vector3.new(0, 3, 0)
-                    task.wait(0.5)
+                    hrp.CFrame = getgenv().W424_Config.StorageCF + Vector3.new(0, 4, 0)
+                    task.wait(0.4)
                     
-                    stopFollowing()
-                    task.wait(0.3)
+                    giveUpOwnership(DraggedItem)
+                    DraggedItem = nil
                     status("Item stored!")
-                    task.wait(0.5)
+                    task.wait(0.6)
                     return
                 end
                 
-                local items = getFloatingItems()
+                local items = getItems()
                 local target = nil
                 local minDist = math.huge
                 
@@ -387,24 +475,24 @@ task.spawn(function()
                     return
                 end
                 
-                status("Grabbing: " .. target.Name)
+                status("Going to: " .. target.Name)
                 hrp.CFrame = target.CFrame + Vector3.new(0, 4, 0)
-                task.wait(0.2)
+                task.wait(0.3)
                 
-                pcall(function()
-                    firetouchinterest(hrp, target, 0)
-                    task.wait(0.1)
-                    firetouchinterest(hrp, target, 1)
-                end)
+                local dragged = attemptDrag(target)
+                if dragged then
+                    DraggedItem = target
+                    status("Dragging to storage!")
+                else
+                    status("Drag failed")
+                end
                 
-                task.wait(0.2)
-                startFollowing(target)
-                status("Dragging to storage...")
+                task.wait(0.3)
             end)
             
             if not ok then
                 warn("[Store Error]", err)
-                stopFollowing()
+                DraggedItem = nil
             end
             
         -- ==========================================
@@ -415,18 +503,18 @@ task.spawn(function()
                 if DraggedItem and DraggedItem.Parent then
                     if not getgenv().W424_Config.RaftCF then
                         status("Raft position not set!")
-                        stopFollowing()
+                        DraggedItem = nil
                         return
                     end
                     
                     status("Moving to raft...")
                     hrp.CFrame = getgenv().W424_Config.RaftCF + Vector3.new(0, 5, 0)
-                    task.wait(0.5)
+                    task.wait(0.4)
                     
-                    stopFollowing()
-                    task.wait(0.3)
-                    status("Item placed at raft")
-                    task.wait(0.5)
+                    giveUpOwnership(DraggedItem)
+                    DraggedItem = nil
+                    status("Item placed at raft!")
+                    task.wait(0.6)
                     return
                 end
                 
@@ -436,11 +524,9 @@ task.spawn(function()
                     return
                 end
                 
-                -- Ke storage
                 hrp.CFrame = getgenv().W424_Config.StorageCF + Vector3.new(0, 5, 0)
                 task.wait(0.4)
                 
-                -- Cari item di sekitar
                 local nearby = getItemsNearStorage()
                 if #nearby == 0 then
                     status("No items at storage")
@@ -454,20 +540,20 @@ task.spawn(function()
                 hrp.CFrame = item.CFrame + Vector3.new(0, 3, 0)
                 task.wait(0.2)
                 
-                pcall(function()
-                    firetouchinterest(hrp, item, 0)
-                    task.wait(0.1)
-                    firetouchinterest(hrp, item, 1)
-                end)
+                local dragged = attemptDrag(item)
+                if dragged then
+                    DraggedItem = item
+                    status("Dragging to raft!")
+                else
+                    status("Drag failed")
+                end
                 
-                task.wait(0.2)
-                startFollowing(item)
-                status("Dragging to raft...")
+                task.wait(0.3)
             end)
             
             if not ok then
                 warn("[Unstore Error]", err)
-                stopFollowing()
+                DraggedItem = nil
             end
         end
     end
@@ -476,5 +562,5 @@ end)
 -- ==========================================
 -- INIT
 -- ==========================================
-notify("W424 Hub v4", "Physical Drag loaded! No remote needed.", 4)
+notify("W424 Hub v5", "LocalizationService Remote loaded!", 4)
 status("Ready | Mode: PickUp | OFF")

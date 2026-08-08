@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (OPTIMIZED)
+-- W424 HUB | 100 DAYS AT SEA (FIXED)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -7,7 +7,6 @@ local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Knu
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
@@ -15,8 +14,7 @@ getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
     AutoCollect = false,
-    CollectRadius = 50,      -- radius untuk collect
-    ESPEnabled = false,
+    CollectRadius = 50,
 }
 
 -- ===== BUAT WINDOW =====
@@ -39,10 +37,6 @@ local function getHRP()
     return nil
 end
 
-local function getChar()
-    return LocalPlayer.Character
-end
-
 local function isCreature(model)
     return model:FindFirstChildOfClass("Humanoid") ~= nil
 end
@@ -52,20 +46,18 @@ local function isItem(model)
 end
 
 -- ==========================================
--- 1. AUTO HARPOON (Raycast + Remote Event)
+-- 1. AUTO HARPOON (Remote Event)
 -- ==========================================
-local harpoonRemote = nil  -- akan diisi otomatis
+local harpoonRemote = nil
 
--- Fungsi untuk mencari remote event pada tool harpoon
 local function findHarpoonRemote()
-    local char = getChar()
+    local char = LocalPlayer.Character
     if not char then return nil end
     local tool = char:FindFirstChildOfClass("Tool")
     if not tool then return nil end
-    -- Coba cari remote yang umum
     local remote = tool:FindFirstChildWhichIsA("RemoteEvent")
     if remote then return remote end
-    -- Jika tidak ada, coba cari dengan nama tertentu (bisa ditambah)
+    -- Coba nama umum
     local possibleNames = {"HarpoonEvent", "Attack", "Fire", "Use"}
     for _, name in ipairs(possibleNames) do
         local r = tool:FindFirstChild(name)
@@ -76,14 +68,12 @@ local function findHarpoonRemote()
     return nil
 end
 
--- Update remote secara periodik (jika tool berganti)
 task.spawn(function()
     while task.wait(1) do
         harpoonRemote = findHarpoonRemote()
     end
 end)
 
--- Loop Auto Harpoon dengan raycast (lebih efisien)
 task.spawn(function()
     while task.wait(0.2) do
         pcall(function()
@@ -97,7 +87,6 @@ task.spawn(function()
             local origin = hrp.Position
             local targets = {}
 
-            -- Scan cepat untuk model dengan Humanoid dalam radius
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if obj:IsA("Model") and obj ~= LocalPlayer.Character then
                     local humanoid = obj:FindFirstChildOfClass("Humanoid")
@@ -110,82 +99,43 @@ task.spawn(function()
                 end
             end
 
-            -- Pilih target terdekat
             if #targets > 0 then
                 table.sort(targets, function(a, b)
                     return (a.part.Position - origin).Magnitude < (b.part.Position - origin).Magnitude
                 end)
                 local target = targets[1].model
-                -- Kirim remote dengan target
                 pcall(function()
                     remote:FireServer(target)
                 end)
-                -- Efek visual sederhana (opsional)
-                -- CameraShake? tidak kita panggil karena mungkin tidak ada
             end
         end)
     end
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (Tween + ProxPrompt jika ada)
+-- 2. AUTO COLLECT (BRING ITEM LOOP)
 -- ==========================================
-local collectCooldown = {}
-local function canCollect(item)
-    if collectCooldown[item] and tick() - collectCooldown[item] < 1 then
-        return false
-    end
-    return true
-end
-
 task.spawn(function()
-    while task.wait(0.5) do
+    while task.wait(0.1) do  -- loop cepat untuk bring item
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
-            local char = getChar()
-            if not char then return end
 
             local radius = getgenv().W424_Sea.CollectRadius or 50
             local origin = hrp.Position
-            local nearestItem = nil
-            local nearestDist = radius
+            local targetPos = hrp.CFrame * CFrame.new(0, 2, 0)  -- sedikit di atas player
 
-            -- Cari item terdekat (model tanpa Humanoid, bukan player)
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if isItem(obj) then
                     local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                     if part and part:IsA("BasePart") then
                         local dist = (part.Position - origin).Magnitude
-                        if dist < nearestDist and canCollect(obj) then
-                            nearestItem = obj
-                            nearestDist = dist
+                        if dist <= radius then
+                            -- Bring item ke player
+                            part.CFrame = targetPos
+                            part.Velocity = Vector3.zero
                         end
-                    end
-                end
-            end
-
-            if nearestItem then
-                local part = nearestItem.PrimaryPart or nearestItem:FindFirstChildWhichIsA("BasePart")
-                if part then
-                    -- Coba cari ProxPrompt (jika ada sistem interaksi)
-                    local prompt = nearestItem:FindFirstChildWhichIsA("ProximityPrompt")
-                    if prompt then
-                        -- Simulasikan interaksi
-                        prompt:InputHoldBegin()
-                        task.wait(0.1)
-                        prompt:InputHoldEnd()
-                    else
-                        -- Gunakan Tween untuk mendekati item (halus)
-                        local targetCF = part.CFrame * CFrame.new(0, 0, 2) -- di depan item
-                        local tween = TweenService:Create(hrp, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {CFrame = targetCF})
-                        tween:Play()
-                        tween.Completed:Wait()
-                        -- Setelah dekat, mungkin item otomatis terkoleksi oleh game, atau kita bisa panggil remote jika ada
-                        -- Jika tidak, kita bisa pindahkan item ke player (opsi terakhir)
-                        -- Tapi lebih baik biarkan game yang mengoleksi
-                        collectCooldown[nearestItem] = tick()
                     end
                 end
             end
@@ -194,11 +144,12 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 3. ESP (Dynamic + Filter)
+-- 3. ESP (DUAL TOGGLE, INDEPENDENT)
 -- ==========================================
-local ESP_Data = {
-    creatures = {enabled = false, highlights = {}},
-    items = {enabled = false, highlights = {}}
+local ESP = {
+    creatures = { enabled = false, highlights = {} },
+    items     = { enabled = false, highlights = {} },
+    connection = nil,
 }
 
 local function createHighlight(adornee, color)
@@ -211,69 +162,76 @@ local function createHighlight(adornee, color)
     return hl
 end
 
-local function updateESP()
-    -- Bersihkan semua highlight lama
-    for _, data in pairs(ESP_Data) do
-        for _, hl in ipairs(data.highlights) do
-            pcall(function() hl:Destroy() end)
-        end
-        data.highlights = {}
-    end
+-- Tambahkan highlight untuk satu kategori (tanpa menghapus yang lain)
+local function addESP(tag, color)
+    if not ESP[tag] then return end
+    local enabled = ESP[tag].enabled
+    if not enabled then return end
 
-    if not ESP_Data.creatures.enabled and not ESP_Data.items.enabled then
-        return
-    end
-
-    -- Scan semua model di workspace
+    -- Cari semua objek yang sesuai
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj ~= LocalPlayer.Character then
             local hasHumanoid = isCreature(obj)
-            if ESP_Data.creatures.enabled and hasHumanoid then
-                local hl = createHighlight(obj, Color3.fromRGB(255,50,50))
-                table.insert(ESP_Data.creatures.highlights, hl)
-            elseif ESP_Data.items.enabled and not hasHumanoid then
-                -- hanya item yang memiliki part fisik
+            if tag == "creatures" and hasHumanoid then
+                local hl = createHighlight(obj, color)
+                table.insert(ESP[tag].highlights, hl)
+            elseif tag == "items" and not hasHumanoid then
                 if obj:FindFirstChildWhichIsA("BasePart") then
-                    local hl = createHighlight(obj, Color3.fromRGB(50,255,50))
-                    table.insert(ESP_Data.items.highlights, hl)
+                    local hl = createHighlight(obj, color)
+                    table.insert(ESP[tag].highlights, hl)
                 end
             end
         end
     end
 end
 
--- Fungsi untuk toggle ESP dengan dynamic update
+-- Hapus semua highlight untuk satu kategori
+local function removeESP(tag)
+    if not ESP[tag] then return end
+    for _, hl in ipairs(ESP[tag].highlights) do
+        pcall(function() hl:Destroy() end)
+    end
+    ESP[tag].highlights = {}
+end
+
+-- Event untuk objek baru yang muncul
+local function setupESPConnection()
+    if ESP.connection then return end
+    ESP.connection = Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Model") and obj ~= LocalPlayer.Character then
+            local hasHumanoid = isCreature(obj)
+            if ESP.creatures.enabled and hasHumanoid then
+                local hl = createHighlight(obj, Color3.fromRGB(255,50,50))
+                table.insert(ESP.creatures.highlights, hl)
+            elseif ESP.items.enabled and not hasHumanoid and obj:FindFirstChildWhichIsA("BasePart") then
+                local hl = createHighlight(obj, Color3.fromRGB(50,255,50))
+                table.insert(ESP.items.highlights, hl)
+            end
+        end
+    end)
+end
+
+-- Fungsi toggle untuk UI
 local function toggleESP(tag, state, color)
-    ESP_Data[tag].enabled = state
     if state then
-        updateESP()
-        -- Tambahkan event listener untuk objek baru
-        if not ESP_Data._connection then
-            ESP_Data._connection = Workspace.DescendantAdded:Connect(function(obj)
-                if ESP_Data.creatures.enabled or ESP_Data.items.enabled then
-                    -- Update ulang secara periodik atau langsung tambahkan
-                    updateESP() -- agak berat, tapi aman
-                end
-            end)
-        end
+        ESP[tag].enabled = true
+        addESP(tag, color)
+        setupESPConnection()
     else
-        -- Hapus highlight tag tersebut
-        for _, hl in ipairs(ESP_Data[tag].highlights) do
-            pcall(function() hl:Destroy() end)
-        end
-        ESP_Data[tag].highlights = {}
-        -- Jika keduanya mati, matikan koneksi
-        if not ESP_Data.creatures.enabled and not ESP_Data.items.enabled then
-            if ESP_Data._connection then
-                ESP_Data._connection:Disconnect()
-                ESP_Data._connection = nil
+        ESP[tag].enabled = false
+        removeESP(tag)
+        -- Jika keduanya mati, putuskan koneksi
+        if not ESP.creatures.enabled and not ESP.items.enabled then
+            if ESP.connection then
+                ESP.connection:Disconnect()
+                ESP.connection = nil
             end
         end
     end
 end
 
 -- ==========================================
--- MENU / UI ELEMENTS (TETAP SAMA)
+-- MENU UI (TETAP SAMA)
 -- ==========================================
 
 Tabs.Combat:AddToggle({
@@ -304,7 +262,6 @@ Tabs.Loot:AddToggle({
     end
 })
 
--- Tambahan Input untuk radius collect (opsional)
 Tabs.Loot:AddInput({
     Title = "Collect Radius",
     Default = "50",
@@ -333,4 +290,4 @@ Tabs.Visuals:AddToggle({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Optimized version loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Fixed version loaded!", 4)

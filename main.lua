@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FIXED)
+-- W424 HUB | 100 DAYS AT SEA (FIXED + FILTER)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -15,6 +15,7 @@ getgenv().W424_Sea = {
     HarpoonRadius = 150,
     AutoCollect = false,
     CollectRadius = 50,
+    CollectFilter = "wood",  -- kata kunci default
 }
 
 -- ===== BUAT WINDOW =====
@@ -57,7 +58,6 @@ local function findHarpoonRemote()
     if not tool then return nil end
     local remote = tool:FindFirstChildWhichIsA("RemoteEvent")
     if remote then return remote end
-    -- Coba nama umum
     local possibleNames = {"HarpoonEvent", "Attack", "Fire", "Use"}
     for _, name in ipairs(possibleNames) do
         local r = tool:FindFirstChild(name)
@@ -113,18 +113,19 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (BRING ITEM LOOP)
+-- 2. AUTO COLLECT (BRING ITEM LOOP + FILTER)
 -- ==========================================
 task.spawn(function()
-    while task.wait(0.1) do  -- loop cepat untuk bring item
+    while task.wait(0.1) do
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
 
             local radius = getgenv().W424_Sea.CollectRadius or 50
+            local filter = getgenv().W424_Sea.CollectFilter or ""
             local origin = hrp.Position
-            local targetPos = hrp.CFrame * CFrame.new(0, 2, 0)  -- sedikit di atas player
+            local targetPos = hrp.CFrame * CFrame.new(0, 2, 0)
 
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if isItem(obj) then
@@ -132,9 +133,12 @@ task.spawn(function()
                     if part and part:IsA("BasePart") then
                         local dist = (part.Position - origin).Magnitude
                         if dist <= radius then
-                            -- Bring item ke player
-                            part.CFrame = targetPos
-                            part.Velocity = Vector3.zero
+                            -- TERAPKAN FILTER
+                            local itemName = obj.Name:lower()
+                            if filter == "" or string.find(itemName, filter:lower()) then
+                                part.CFrame = targetPos
+                                part.Velocity = Vector3.zero
+                            end
                         end
                     end
                 end
@@ -162,13 +166,11 @@ local function createHighlight(adornee, color)
     return hl
 end
 
--- Tambahkan highlight untuk satu kategori (tanpa menghapus yang lain)
 local function addESP(tag, color)
     if not ESP[tag] then return end
     local enabled = ESP[tag].enabled
     if not enabled then return end
 
-    -- Cari semua objek yang sesuai
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj ~= LocalPlayer.Character then
             local hasHumanoid = isCreature(obj)
@@ -185,7 +187,6 @@ local function addESP(tag, color)
     end
 end
 
--- Hapus semua highlight untuk satu kategori
 local function removeESP(tag)
     if not ESP[tag] then return end
     for _, hl in ipairs(ESP[tag].highlights) do
@@ -194,7 +195,6 @@ local function removeESP(tag)
     ESP[tag].highlights = {}
 end
 
--- Event untuk objek baru yang muncul
 local function setupESPConnection()
     if ESP.connection then return end
     ESP.connection = Workspace.DescendantAdded:Connect(function(obj)
@@ -211,7 +211,6 @@ local function setupESPConnection()
     end)
 end
 
--- Fungsi toggle untuk UI
 local function toggleESP(tag, state, color)
     if state then
         ESP[tag].enabled = true
@@ -220,7 +219,6 @@ local function toggleESP(tag, state, color)
     else
         ESP[tag].enabled = false
         removeESP(tag)
-        -- Jika keduanya mati, putuskan koneksi
         if not ESP.creatures.enabled and not ESP.items.enabled then
             if ESP.connection then
                 ESP.connection:Disconnect()
@@ -231,7 +229,7 @@ local function toggleESP(tag, state, color)
 end
 
 -- ==========================================
--- MENU UI (TETAP SAMA)
+-- MENU UI (TETAP SAMA + TAMBAHAN FILTER)
 -- ==========================================
 
 Tabs.Combat:AddToggle({
@@ -274,6 +272,16 @@ Tabs.Loot:AddInput({
     end
 })
 
+-- TAMBAHAN INPUT UNTUK FILTER NAMA ITEM
+Tabs.Loot:AddInput({
+    Title = "Item Filter (nama item)",
+    Default = "wood",
+    Placeholder = "Kata kunci (kosongkan untuk semua)",
+    Callback = function(value)
+        getgenv().W424_Sea.CollectFilter = value or ""
+    end
+})
+
 Tabs.Visuals:AddToggle({
     Title = "Creatures / Sharks ESP",
     Default = false,
@@ -290,4 +298,4 @@ Tabs.Visuals:AddToggle({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Fixed version loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Fixed + Filter loaded!", 4)

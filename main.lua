@@ -1,10 +1,11 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA — DEX EDITION
+-- W424 HUB | 100 DAYS AT SEA — LOCALIZATION REMOTE v6
 -- ==========================================
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CollectionService = game:GetService("CollectionService")
+local LocalizationService = game:GetService("LocalizationService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
@@ -23,14 +24,24 @@ getgenv().W424_Kill = false
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
 
 -- ==========================================
+-- REMOTE REFERENCES (DARI REMOTE SPY!)
+-- ==========================================
+local RemoteEvent = LocalizationService:WaitForChild("RemoteEvent")
+local RemoteFunction = LocalizationService:WaitForChild("RemoteFunction")
+
+-- ==========================================
 -- KONFIGURASI
 -- ==========================================
 getgenv().W424_Config = {
-    Mode = "RaftCamp",
+    -- ID dari remote spy (UPDATE jika berubah!)
+    AttemptDragId = 315265,
+    GiveUpId = 316175,
+    
+    Mode = "PickUp",
     Active = false,
     SearchRadius = 400,
     ShootCooldown = 1.5,
-    PullTimeout = 4,
+    PullTimeout = 5,
     DropDistance = 12,
     HarpoonName = "Harpoon",
 }
@@ -38,7 +49,7 @@ getgenv().W424_Config = {
 -- ==========================================
 -- STATE
 -- ==========================================
-local CurrentTarget = nil
+local CurrentItem = nil
 local LastShootTime = 0
 
 -- ==========================================
@@ -63,22 +74,16 @@ local function equipHarpoon()
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if not char or not backpack then return nil end
     
-    local harpoonName = string.lower(getgenv().W424_Config.HarpoonName or "Harpoon")
+    local name = string.lower(getgenv().W424_Config.HarpoonName or "Harpoon")
     
     for _, v in ipairs(char:GetChildren()) do
-        if v:IsA("Tool") and string.lower(v.Name) == harpoonName then
-            return v
-        end
+        if v:IsA("Tool") and string.lower(v.Name) == name then return v end
     end
     
     for _, v in ipairs(backpack:GetChildren()) do
-        if v:IsA("Tool") and string.lower(v.Name) == harpoonName then
+        if v:IsA("Tool") and string.lower(v.Name) == name then
             local hum = getHumanoid()
-            if hum then
-                hum:EquipTool(v)
-                task.wait(0.4)
-                return v
-            end
+            if hum then hum:EquipTool(v); task.wait(0.4); return v end
         end
     end
     return nil
@@ -91,30 +96,25 @@ local function unequipTools()
     end)
 end
 
--- ==========================================
--- SCAN ITEM (FIXED — DARI DEX INFO)
--- Item adalah Model dengan PrimaryPart (bukan BasePart langsung)
--- ==========================================
+-- Scan item (Model dengan PrimaryPart)
 local function getItems()
     local items = {}
     local hrp = getHRP()
     if not hrp then return items end
     
-    local playerPos = hrp.Position
+    local pos = hrp.Position
     local radius = getgenv().W424_Config.SearchRadius or 400
     
-    -- DebrisField — HANYA MODEL dengan PrimaryPart
     local debris = Workspace:FindFirstChild("DebrisField")
     if debris then
         for _, folder in ipairs(debris:GetChildren()) do
             if folder:IsA("Folder") or folder:IsA("Model") then
                 for _, child in ipairs(folder:GetChildren()) do
-                    -- HANYA proses jika child adalah MODEL dengan PrimaryPart
                     if child:IsA("Model") and child.PrimaryPart then
                         local part = child.PrimaryPart
-                        local dist = (part.Position - playerPos).Magnitude
+                        local dist = (part.Position - pos).Magnitude
                         if dist <= radius and part.Position.Y < 150 then
-                            table.insert(items, {Part = part, Model = child, Distance = dist})
+                            table.insert(items, {Model = child, Part = part, Distance = dist})
                         end
                     end
                 end
@@ -122,37 +122,45 @@ local function getItems()
         end
     end
     
-    -- Floating_Object — HANYA MODEL dengan PrimaryPart
     for _, obj in ipairs(CollectionService:GetTagged("Floating_Object")) do
-        if obj and obj.Parent then
-            if obj:IsA("Model") and obj.PrimaryPart then
-                local part = obj.PrimaryPart
-                local dist = (part.Position - playerPos).Magnitude
-                if dist <= radius and part.Position.Y < 150 then
-                    table.insert(items, {Part = part, Model = obj, Distance = dist})
-                end
+        if obj and obj.Parent and obj:IsA("Model") and obj.PrimaryPart then
+            local part = obj.PrimaryPart
+            local dist = (part.Position - pos).Magnitude
+            if dist <= radius and part.Position.Y < 150 then
+                table.insert(items, {Model = obj, Part = part, Distance = dist})
             end
         end
     end
     
-    -- Sort by distance
     table.sort(items, function(a, b) return a.Distance < b.Distance end)
-    
     return items
 end
 
--- Fire harpoon ke MODEL item (bukan part)
-local function shootHarpoon(tool, itemModel)
-    if not tool or not itemModel or not itemModel.Parent then return false end
-    
-    local remote = tool:FindFirstChildOfClass("RemoteEvent")
-    if not remote then return false end
-    
-    -- Fire ke MODEL (bukan part), sesuai remote spy asli
+-- ==========================================
+-- REMOTE FUNCTIONS (VIA LOCALIZATIONSERVICE!)
+-- ==========================================
+local function attemptDrag(itemModel)
+    if not itemModel or not itemModel.Parent then return false end
     local ok = pcall(function()
-        remote:FireServer(itemModel)
+        RemoteFunction:InvokeServer(
+            getgenv().W424_Config.AttemptDragId,
+            "AttemptDrag",
+            itemModel
+        )
     end)
-    
+    return ok
+end
+
+local function giveUpOwnership(itemModel)
+    if not itemModel or not itemModel.Parent then return false end
+    local ok = pcall(function()
+        RemoteEvent:FireServer(
+            getgenv().W424_Config.GiveUpId,
+            "GiveUpOwnership",
+            itemModel,
+            "~v0,0,0"
+        )
+    end)
     return ok
 end
 
@@ -160,14 +168,14 @@ end
 -- UI ORVION
 -- ==========================================
 local Window = OrvionLib:CreateWindow({
-    Title = "W424 Hub | Dex Edition",
+    Title = "W424 Hub | Localization Remote v6",
     Icon = "rbxassetid://0"
 })
 
 local Tabs = {
     Main = Window:AddTab("Auto"),
     Settings = Window:AddTab("Settings"),
-    Dex = Window:AddTab("Dex Info"),
+    Debug = Window:AddTab("Debug"),
 }
 
 local StatusPara = Tabs.Main:AddParagraph({
@@ -182,7 +190,7 @@ end
 -- Mode
 Tabs.Main:AddDropdown({
     Title = "Mode",
-    Values = {"RaftCamp", "StorageCamp", "FreeFire"},
+    Values = {"PickUp", "Store"},
     DefaultValue = getgenv().W424_Config.Mode,
     Callback = function(v)
         getgenv().W424_Config.Mode = v
@@ -192,22 +200,37 @@ Tabs.Main:AddDropdown({
 
 -- Toggle
 Tabs.Main:AddToggle({
-    Title = "Start Auto Sniper",
+    Title = "Start Auto Farm",
     Default = false,
     Callback = function(state)
         getgenv().W424_Config.Active = state
-        if not state then
-            CurrentTarget = nil
-            unequipTools()
-        end
+        if not state then CurrentItem = nil; unequipTools() end
         status("Mode: " .. getgenv().W424_Config.Mode .. " | " .. (state and "ON" or "OFF"))
-        notify("Harpoon Sniper", state and "Locked and loaded!" or "Stopped", 2)
+        notify("Auto", state and "Started!" or "Stopped", 2)
     end
 })
 
 -- ==========================================
 -- SETTINGS
 -- ==========================================
+Tabs.Settings:AddInput({
+    Title = "AttemptDrag ID",
+    Default = tostring(getgenv().W424_Config.AttemptDragId),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n then getgenv().W424_Config.AttemptDragId = n end
+    end
+})
+
+Tabs.Settings:AddInput({
+    Title = "GiveUpOwnership ID",
+    Default = tostring(getgenv().W424_Config.GiveUpId),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n then getgenv().W424_Config.GiveUpId = n end
+    end
+})
+
 Tabs.Settings:AddInput({
     Title = "Search Radius",
     Default = tostring(getgenv().W424_Config.SearchRadius),
@@ -217,121 +240,76 @@ Tabs.Settings:AddInput({
     end
 })
 
-Tabs.Settings:AddInput({
-    Title = "Shoot Cooldown (sec)",
-    Default = tostring(getgenv().W424_Config.ShootCooldown),
-    Callback = function(v)
-        local n = tonumber(v)
-        if n then getgenv().W424_Config.ShootCooldown = n end
-    end
-})
-
-Tabs.Settings:AddInput({
-    Title = "Drop Distance",
-    Default = tostring(getgenv().W424_Config.DropDistance),
-    Callback = function(v)
-        local n = tonumber(v)
-        if n then getgenv().W424_Config.DropDistance = n end
-    end
-})
-
 -- ==========================================
--- DEX INFO TAB (EKSPLORASI DRAGSYSTEM)
+-- DEBUG TAB
 -- ==========================================
-local DexPara = Tabs.Dex:AddParagraph({
-    Title = "Dex Explorer",
-    Content = "Click buttons below to explore game systems",
-})
-
-Tabs.Dex:AddButton({
-    Title = "🔍 Scan DragSystem Module",
-    Callback = function()
-        local dragSys = ReplicatedStorage:FindFirstChild("Modules")
-            and ReplicatedStorage.Modules:FindFirstChild("Systems")
-            and ReplicatedStorage.Modules.Systems:FindFirstChild("DragSystem")
-        
-        if dragSys then
-            local info = "DragSystem found!\nClass: " .. dragSys.ClassName .. "\n"
-            if dragSys:IsA("ModuleScript") then
-                info = info .. "Type: ModuleScript\n"
-                -- Coba require (hati-hati)
-                local ok, result = pcall(function()
-                    return require(dragSys)
-                end)
-                if ok and result then
-                    info = info .. "Loaded successfully!\n"
-                    -- List functions/properties
-                    for k, v in pairs(result) do
-                        info = info .. "- " .. tostring(k) .. " (" .. type(v) .. ")\n"
-                    end
-                else
-                    info = info .. "Load failed: " .. tostring(result) .. "\n"
-                end
-            elseif dragSys:IsA("RemoteEvent") then
-                info = info .. "Type: RemoteEvent\nCan be fired!"
-            elseif dragSys:IsA("RemoteFunction") then
-                info = info .. "Type: RemoteFunction\nCan be invoked!"
-            end
-            DexPara:SetDesc(info)
-            notify("Dex", "DragSystem scanned", 2)
-        else
-            DexPara:SetDesc("DragSystem not found in ReplicatedStorage.Modules.Systems")
-            notify("Dex", "DragSystem not found", 2)
-        end
-    end
-})
-
-Tabs.Dex:AddButton({
-    Title = "🔍 List Floating Item Models",
-    Callback = function()
-        local assets = ReplicatedStorage:FindFirstChild("Assets")
-        local models = assets and assets:FindFirstChild("Floating_Item_Models")
-        
-        if models then
-            local info = "Floating Item Models:\n"
-            for _, model in ipairs(models:GetChildren()) do
-                local hasPlank = model:FindFirstChild("Plank") and "✓" or "✗"
-                info = info .. "- " .. model.Name .. " [Plank:" .. hasPlank .. "]\n"
-            end
-            DexPara:SetDesc(info)
-            notify("Dex", #models:GetChildren() .. " models found", 2)
-        else
-            DexPara:SetDesc("Path not found: ReplicatedStorage.Assets.Floating_Item_Models")
-        end
-    end
-})
-
-Tabs.Dex:AddButton({
-    Title = "🔍 Scan Workspace Items (Fixed)",
+Tabs.Debug:AddButton({
+    Title = "🔍 Scan Items",
     Callback = function()
         local items = getItems()
-        local info = "Found " .. #items .. " valid items:\n"
-        for i = 1, math.min(8, #items) do
-            info = info .. items[i].Model.Name .. " (" .. math.floor(items[i].Distance) .. "m)\n"
+        local msg = "Found " .. #items .. " items:\n"
+        for i = 1, math.min(6, #items) do
+            msg = msg .. items[i].Model.Name .. " (" .. math.floor(items[i].Distance) .. "m)\n"
         end
-        DexPara:SetDesc(info)
-        notify("Dex", #items .. " items scanned", 2)
+        status(msg)
+        notify("Debug", #items .. " items", 2)
     end
 })
 
-Tabs.Dex:AddButton({
-    Title = "🧪 Test Shoot Nearest (Model)",
+Tabs.Debug:AddButton({
+    Title = "🧪 Equip Harpoon",
     Callback = function()
-        local harpoon = equipHarpoon()
-        if not harpoon then
-            notify("Error", "Harpoon not found!", 3)
-            return
-        end
-        
+        local tool = equipHarpoon()
+        notify("Debug", tool and "Equipped!" or "Not found!", 2)
+    end
+})
+
+Tabs.Debug:AddButton({
+    Title = "🧪 Drag Nearest (Remote)",
+    Callback = function()
         local items = getItems()
-        if #items == 0 then
-            notify("Error", "No items!", 3)
-            return
-        end
+        if #items == 0 then notify("Error", "No items!", 3); return end
         
         local target = items[1].Model
-        local ok = shootHarpoon(harpoon, target)
-        notify("Test", ok and "Shot at " .. target.Name or "Failed!", 3)
+        local ok = attemptDrag(target)
+        notify("Test", ok and "Drag sent to " .. target.Name or "Failed!", 3)
+        if ok then CurrentItem = target end
+    end
+})
+
+Tabs.Debug:AddButton({
+    Title = "🧪 Drop Current (Remote)",
+    Callback = function()
+        if not CurrentItem then notify("Error", "No item dragged!", 3); return end
+        local ok = giveUpOwnership(CurrentItem)
+        notify("Test", ok and "Dropped!" or "Failed!", 3)
+        if ok then CurrentItem = nil; unequipTools() end
+    end
+})
+
+Tabs.Debug:AddButton({
+    Title = "🔍 Get IDs from DragSystem",
+    Callback = function()
+        local ok, DragSystem = pcall(function()
+            return require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Systems"):WaitForChild("DragSystem"))
+        end)
+        
+        if not ok or not DragSystem then
+            notify("Error", "DragSystem not loaded!", 3)
+            return
+        end
+        
+        local info = "DragSystem loaded!\n"
+        
+        if DragSystem.Network then
+            info = info .. "\nNetwork table:\n"
+            for k, v in pairs(DragSystem.Network) do
+                info = info .. "- " .. tostring(k) .. " (" .. type(v) .. ")\n"
+            end
+        end
+        
+        status(info)
+        notify("Debug", "Check Status for details", 3)
     end
 })
 
@@ -342,45 +320,36 @@ task.spawn(function()
     while not getgenv().W424_Kill do
         task.wait(0.2)
         
-        if not getgenv().W424_Config.Active then
-            continue
-        end
+        if not getgenv().W424_Config.Active then continue end
         
         local hrp = getHRP()
-        if not hrp then
-            status("No character")
-            continue
-        end
+        if not hrp then status("No character"); continue end
         
-        if tick() - LastShootTime < (getgenv().W424_Config.ShootCooldown or 1.5) then
-            continue
-        end
+        if tick() - LastShootTime < (getgenv().W424_Config.ShootCooldown or 1.5) then continue end
         
-        -- Equip harpoon
+        -- Equip harpoon (visual only)
         local harpoon = equipHarpoon()
-        if not harpoon then
-            status("Harpoon not found!")
-            getgenv().W424_Config.Active = false
-            continue
-        end
+        if not harpoon then status("Harpoon not found!"); getgenv().W424_Config.Active = false; continue end
         
-        -- If pulling item
-        if CurrentTarget and CurrentTarget.Parent then
-            local dist = (CurrentTarget.Position - hrp.Position).Magnitude
-            status("Pulling " .. CurrentTarget.Name .. " (" .. math.floor(dist) .. "m)")
+        -- If dragging item
+        if CurrentItem and CurrentItem.Parent then
+            local dist = (CurrentItem.PrimaryPart.Position - hrp.Position).Magnitude
+            status("Pulling " .. CurrentItem.Name .. " (" .. math.floor(dist) .. "m)")
             
             if dist <= (getgenv().W424_Config.DropDistance or 12) then
+                giveUpOwnership(CurrentItem)
                 unequipTools()
-                status("Dropped!")
-                CurrentTarget = nil
-                task.wait(0.5)
+                status("Dropped " .. CurrentItem.Name .. "!")
+                CurrentItem = nil
+                task.wait(0.6)
                 continue
             end
             
-            if tick() - LastShootTime > (getgenv().W424_Config.PullTimeout or 4) then
+            if tick() - LastShootTime > (getgenv().W424_Config.PullTimeout or 5) then
+                giveUpOwnership(CurrentItem)
                 unequipTools()
-                status("Timeout — skipping")
-                CurrentTarget = nil
+                status("Timeout — dropping")
+                CurrentItem = nil
                 task.wait(0.3)
                 continue
             end
@@ -388,34 +357,24 @@ task.spawn(function()
             continue
         end
         
-        -- Find & shoot
+        -- Find new target
         local items = getItems()
-        if #items == 0 then
-            status("No targets in range")
-            continue
-        end
+        if #items == 0 then status("No items in range"); continue end
         
-        local targetModel = items[1].Model
-        local targetPart = items[1].Part
-        local targetDist = items[1].Distance
+        local target = items[1]
+        if target.Distance < 5 then status("Too close"); task.wait(0.5); continue end
         
-        if targetDist < 5 then
-            status("Too close — skipping")
-            task.wait(0.5)
-            continue
-        end
+        status("Targeting: " .. target.Model.Name .. " (" .. math.floor(target.Distance) .. "m)")
         
-        status("Locking: " .. targetModel.Name .. " (" .. math.floor(targetDist) .. "m)")
-        
-        -- SHOOT KE MODEL (bukan part)
-        local fired = shootHarpoon(harpoon, targetModel)
+        -- FIRE REMOTE DRAG!
+        local fired = attemptDrag(target.Model)
         
         if fired then
-            CurrentTarget = targetPart
+            CurrentItem = target.Model
             LastShootTime = tick()
-            status("Fired! Pulling " .. targetModel.Name .. "...")
+            status("Dragged " .. target.Model.Name .. "!")
         else
-            status("Shoot failed!")
+            status("Drag failed!")
             task.wait(0.5)
         end
     end
@@ -424,5 +383,5 @@ end)
 -- ==========================================
 -- INIT
 -- ==========================================
-notify("W424 Hub | Dex Edition", "Model-based scan loaded!", 4)
-status("Ready | Mode: RaftCamp | OFF")
+notify("W424 Hub v6", "LocalizationService Remote loaded!", 4)
+status("Ready | Mode: PickUp | OFF")

@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (TOUCH & DRAG MECHANIC)
+-- W424 HUB | 100 DAYS AT SEA (FIXED DRAG & DROP)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -8,7 +8,6 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local CollectionService = game:GetService("CollectionService")
-local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 getgenv().W424_Sea = {
@@ -98,10 +97,10 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (Touch to Drag Mechanics)
+-- 2. AUTO COLLECT (Teleport -> Touch/Drag -> Return -> Drop)
 -- ==========================================
 task.spawn(function()
-    while task.wait(2) do
+    while task.wait(1) do
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
@@ -122,33 +121,38 @@ task.spawn(function()
 
                 if part then
                     local dist = (part.Position - raftPosition.Position).Magnitude
+                    -- Pastikan item ada di air
                     if dist <= radius and part.Position.Y < 148 then
                         
+                        -- SIMPAN POSISI ITEM SEBELUM DI-DRAG
+                        local itemOriginalCF = part.CFrame
+
                         -- LANGKAH 1: Teleport ke item
                         hrp.CFrame = part.CFrame + Vector3.new(0, 2, 0)
-                        task.wait(1.0)
+                        task.wait(0.2)
                         
-                        -- LANGKAH 2: Sentuh item untuk memicu status "Touch" (agar siap di-drag)
+                        -- LANGKAH 2: Sentuh item untuk memicu sistem drag game
                         firetouchinterest(hrp, part, 0)
                         firetouchinterest(hrp, part, 1)
-                        task.wait(0.1)
+                        task.wait(0.2)
                         
-                        -- LANGKAH 3: Pakai Tween untuk menyeret/membawa item kembali ke rakit secara mulus
-                        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear)
-                        local tween = TweenService:Create(hrp, tweenInfo, {CFrame = raftPosition + Vector3.new(0, 4, 0)})
-                        
-                        -- Ikutkan posisi part-nya agar ketarik bersama player (simulasi drag)
-                        local partTween = TweenService:Create(part, tweenInfo, {CFrame = raftPosition + Vector3.new(2, 2, 0)})
-                        
-                        tween:Play()
-                        partTween:Play()
-                        partTween.Completed:Wait()
-                        
-                        -- LANGKAH 4: Lepas sentuhan / drop item di rakit
+                        -- LANGKAH 3: Paksa posisi item ikut menempel/mendekat ke player saat balik ke rakit
+                        local startTime = tick()
+                        while tick() - startTime < 0.6 do
+                            if part and hrp then
+                                part.CFrame = hrp.CFrame + Vector3.new(0, 0, -3) -- Posisi di depan player (seperti sedang di-drag)
+                                part.Velocity = Vector3.zero
+                            end
+                            hrp.CFrame = raftPosition -- Kembali ke rakit perlahan/langsung
+                            task.run(task.wait)
+                        end
+
+                        -- LANGKAH 4: Lepas / Drop item agar jatuh diam di rakit
                         firetouchinterest(hrp, part, 1)
-                        task.wait(0.3)
                         
-                        break -- Ambil satu per satu siklus
+                        -- Beri sedikit jeda agar item stabil mendarat di lantai rakit
+                        task.wait(0.5)
+                        break 
                     end
                 end
             end
@@ -192,4 +196,4 @@ Tabs.Loot:AddInput({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Touch & Drag System Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Drag & Drop Fixed Loaded!", 4)

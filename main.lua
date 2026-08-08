@@ -1,5 +1,5 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (FIXED FLOATING COLLECTOR)
+-- W424 HUB | 100 DAYS AT SEA (TELEPORT & DROP LOOP)
 -- ==========================================
 
 local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
@@ -14,7 +14,7 @@ getgenv().W424_Sea = {
     AutoHarpoon = false,
     HarpoonRadius = 150,
     AutoCollect = false,
-    CollectRadius = 60,
+    CollectRadius = 80,
 }
 
 -- ===== BUAT WINDOW UTAMA =====
@@ -22,7 +22,7 @@ local Window = OrvionLib:CreateWindow({
     Title = "W424 Hub | 100 Days At Sea"
 })
 
--- ===== TOMBOL TOGGLE UI MELAYANG (MOBILE FRIENDLY) =====
+-- ===== TOMBOL TOGGLE UI MELAYANG =====
 local mainGui = nil
 for _, gui in ipairs(CoreGui:GetChildren()) do
     if gui:IsA("ScreenGui") and (gui.Name:find("Orvion") or gui:FindFirstChild("Main")) then
@@ -42,10 +42,7 @@ toggleButton.TextSize = 24
 toggleButton.BackgroundTransparency = 0.2
 toggleButton.BorderSizePixel = 0
 toggleButton.Parent = CoreGui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(1, 0)
-corner.Parent = toggleButton
+Instance.new("UICorner", toggleButton).CornerRadius = UDim.new(1, 0)
 
 local uiVisible = true
 toggleButton.MouseButton1Click:Connect(function()
@@ -57,7 +54,6 @@ end)
 local Tabs = {
     Combat  = Window:AddTab("Combat"),
     Loot    = Window:AddTab("Looting"),
-    Visuals = Window:AddTab("Visuals"),
 }
 
 local function getHRP()
@@ -67,7 +63,7 @@ local function getHRP()
 end
 
 -- ==========================================
--- 1. AUTO HARPOON (Combat)
+-- 1. AUTO HARPOON
 -- ==========================================
 task.spawn(function()
     while task.wait(0.3) do
@@ -101,18 +97,19 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- 2. AUTO COLLECT (MENGGUNAKAN TAG "Floating_Object" ASLI GAME)
+-- 2. AUTO COLLECT (Teleport -> Ambil -> Balik ke Raft -> Drop)
 -- ==========================================
 task.spawn(function()
-    while task.wait(0.3) do
+    while task.wait(0.8) do
         pcall(function()
             if not getgenv().W424_Sea.AutoCollect then return end
             local hrp = getHRP()
             if not hrp then return end
 
-            local radius = getgenv().W424_Sea.CollectRadius or 60
-            
-            -- Ambil semua objek yang benar-benar ditandai sebagai item laut oleh game
+            -- Simpan posisi awal di rakit sebelum pergi ngambil item
+            local raftPosition = hrp.CFrame
+            local radius = getgenv().W424_Sea.CollectRadius or 80
+
             for _, obj in ipairs(CollectionService:GetTagged("Floating_Object")) do
                 if not getgenv().W424_Sea.AutoCollect then break end
                 
@@ -124,13 +121,33 @@ task.spawn(function()
                 end
 
                 if part then
-                    local dist = (part.Position - hrp.Position).Magnitude
-                    -- Jika item berada dalam radius dan berada di area air (bukan di atas rakit/dataran tinggi)
-                    if dist <= radius and part.Position.Y < 148 then 
-                        -- Teleport karakter sebentar ke posisi item mengapung tersebut untuk mengambilnya
-                        local oldPos = hrp.CFrame
+                    local dist = (part.Position - raftPosition.Position).Magnitude
+                    -- Pastikan item ada di air dan dalam radius
+                    if dist <= radius and part.Position.Y < 148 then
+                        
+                        -- LANGKAH 1: Teleport ke item di air
                         hrp.CFrame = part.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.1)
+                        task.wait(0.2)
+                        
+                        -- LANGKAH 2: Simulasi interaksi/touch agar game mendeteksi item terpegang
+                        firetouchinterest(hrp, part, 0)
+                        firetouchinterest(hrp, part, 1)
+                        
+                        -- LANGKAH 3: Kembali ke posisi rakit semula
+                        hrp.CFrame = raftPosition
+                        task.wait(0.2)
+                        
+                        -- LANGKAH 4: Drop item (melepas tool/objek yang dipegang jika masuk inventory tangan)
+                        pcall(function()
+                            local char = LocalPlayer.Character
+                            local heldTool = char and char:FindFirstChildOfClass("Tool")
+                            if heldTool then
+                                -- Jika game punya remote drop atau cukup unequip/parent ke workspace
+                                heldTool.Parent = Workspace
+                            end
+                        end)
+                        
+                        break -- Ambil satu-satu per siklus agar stabil
                     end
                 end
             end
@@ -159,14 +176,14 @@ Tabs.Combat:AddInput({
 })
 
 Tabs.Loot:AddToggle({
-    Title = "Auto Grab Floating Items (Tag Based)",
+    Title = "Auto Grab & Drop to Raft",
     Default = false,
     Callback = function(state) getgenv().W424_Sea.AutoCollect = state end
 })
 
 Tabs.Loot:AddInput({
     Title = "Collect Radius",
-    Default = "60",
+    Default = "80",
     Placeholder = "Jangkauan ambil...",
     Callback = function(v)
         local n = tonumber(v)
@@ -174,4 +191,4 @@ Tabs.Loot:AddInput({
     end
 })
 
-OrvionLib:Notify("W424 Hub", "Floating Tag System Loaded!", 4)
+OrvionLib:Notify("W424 Hub", "Teleport & Drop Loop Loaded!", 4)

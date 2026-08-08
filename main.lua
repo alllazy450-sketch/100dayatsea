@@ -1,140 +1,92 @@
 -- ==========================================
--- W424 HUB | 100 DAYS AT SEA (PURE MOBILE UI)
+-- W424 HUB | 100 DAYS AT SEA (ORVION LIB EDITION)
 -- ==========================================
+
+-- LOAD LIBRARY
+local OrvionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/KnullXDgt/orvion/refs/heads/main/orvionlibrary.lua"))()
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
-getgenv().W424 = {
+getgenv().W424_Sea = {
     AutoHarpoon = false,
-    HarpoonRad = 150,
-    AutoCollect = false
+    HarpoonRadius = 150,
+    AutoCollect = false,
+    ESPItems = false,
+    ESPCreatures = false,
 }
 
--- Hapus UI lama jika ada
-if CoreGui:FindFirstChild("W424_MobileUI") then
-    CoreGui.W424_MobileUI:Destroy()
-end
+-- BUAT WINDOW
+local Window = OrvionLib:CreateWindow({
+    Title = "W424 Hub | 100 Days At Sea"
+})
 
--- Buat ScreenGui Utama
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "W424_MobileUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = CoreGui
-
--- Tombol Mengapung untuk Buka/Tutup Menu
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(0, 110, 0, 40)
-ToggleBtn.Position = UDim2.new(0, 20, 0, 100)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 200)
-ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.Text = "W424 Menu"
-ToggleBtn.TextSize = 14
-ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.Parent = ScreenGui
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 8)
-
--- Main Frame Menu
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 260, 0, 220)
-MainFrame.Position = UDim2.new(0, 20, 0, 150)
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-MainFrame.Visible = false
-MainFrame.Parent = ScreenGui
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
-
--- Judul Menu
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 35)
-Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "W424 Hub | Sea Edition"
-Title.TextSize = 13
-Title.Font = Enum.Font.GothamBold
-Title.Parent = MainFrame
-Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
-
--- Tombol Buka/Tutup
-ToggleBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-end)
-
--- Fungsi Bikin Toggle Button di Dalam Menu
-local function createButton(name, yPos, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 35)
-    btn.Position = UDim2.new(0, 10, 0, yPos)
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Text = name .. ": OFF"
-    btn.TextSize = 12
-    btn.Font = Enum.Font.Gotham
-    btn.Parent = MainFrame
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-
-    local state = false
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        if state then
-            btn.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
-            btn.Text = name .. ": ON"
-        else
-            btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-            btn.Text = name .. ": OFF"
-        end
-        callback(state)
-    end)
-end
-
--- Tambah Fitur ke Menu
-createButton("Auto Harpoon / Shark", 45, function(v)
-    getgenv().W424.AutoHarpoon = v
-end)
-
-createButton("Auto Collect Items", 90, function(v)
-    getgenv().W424.AutoCollect = v
-end)
+-- TAMBAH TAB
+local Tabs = {
+    Combat  = Window:AddTab("Combat"),
+    Loot    = Window:AddTab("Looting"),
+    Visuals = Window:AddTab("Visuals"),
+}
 
 -- ==========================================
--- LOGIC UTAMA (HARPOON & COLLECT)
+-- LOGIC UTAMA (TIDAK DIUBAH)
 -- ==========================================
 local function getHRP()
     local char = LocalPlayer.Character
-    if char then return char:FindFirstChild("HumanoidRootPart") end
+    if char then
+        return char:FindFirstChild("HumanoidRootPart")
+    end
     return nil
 end
 
+-- 1. Auto Harpoon / Attack Loop
 task.spawn(function()
-    while task.wait(0.3) do
+    while task.wait(0.4) do
         pcall(function()
-            local hrp = getHRP()
-            if not hrp then return end
+            if getgenv().W424_Sea.AutoHarpoon then
+                local hrp = getHRP()
+                if not hrp then return end
 
-            -- 1. Auto Harpoon
-            if getgenv().W424.AutoHarpoon then
-                for _, mob in ipairs(Workspace:GetDescendants()) do
-                    if mob:IsA("Model") and (mob.Name:find("Shark") or mob.Name:find("Creature") or mob.Name:find("Fish")) then
-                        local part = mob:FindFirstChildWhichIsA("BasePart")
-                        if part and (hrp.Position - part.Position).Magnitude <= getgenv().W424.HarpoonRad then
-                            local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-                            if tool then
-                                tool:Activate()
-                                local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("Attack")
-                                if remote then remote:FireServer(mob) end
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if obj:IsA("Model") and (obj.Name:find("Shark") or obj.Name:find("Creature") or obj.Name:find("Fish") or obj.Name:find("Monster")) then
+                        local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                        local part = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                        
+                        if humanoid and humanoid.Health > 0 and part then
+                            if (hrp.Position - part.Position).Magnitude <= getgenv().W424_Sea.HarpoonRadius then
+                                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                                if tool then
+                                    tool:Activate()
+                                    pcall(function()
+                                        local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("Attack") or tool:FindFirstChild("Handle")
+                                        if remote and remote:IsA("RemoteEvent") then 
+                                            remote:FireServer(obj) 
+                                        end
+                                    end)
+                                end
                             end
                         end
                     end
                 end
             end
+        end)
+    end
+end)
 
-            -- 2. Auto Collect
-            if getgenv().W424.AutoCollect then
+-- 2. Auto Collect Floating Items
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(function()
+            if getgenv().W424_Sea.AutoCollect then
+                local hrp = getHRP()
+                if not hrp then return end
+
                 for _, item in ipairs(Workspace:GetChildren()) do
-                    if item:IsA("Model") and (item.Name:find("Log") or item.Name:find("Wood") or item.Name:find("Barrel") or item.Name:find("Box")) then
-                        local part = item:FindFirstChildWhichIsA("BasePart")
-                        if part then
+                    if item:IsA("Model") and item ~= LocalPlayer.Character then
+                        local part = item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")
+                        if part and (item.Name:find("Wood") or item.Name:find("Log") or item.Name:find("Barrel") or item.Name:find("Box") or item.Name:find("Item")) then
                             part.CFrame = hrp.CFrame + Vector3.new(0, 2, 0)
                             part.Velocity = Vector3.zero
                         end
@@ -145,4 +97,82 @@ task.spawn(function()
     end
 end)
 
-print("W424 Pure Mobile UI Loaded Successfully!")
+-- ==========================================
+-- MENU / UI ELEMENTS (ORVION LIB)
+-- ==========================================
+
+-- TAB COMBAT
+Tabs.Combat:AddToggle({
+    Title = "Auto Harpoon / Kill Creature",
+    Default = false,
+    Callback = function(state)
+        getgenv().W424_Sea.AutoHarpoon = state
+    end
+})
+
+Tabs.Combat:AddInput({
+    Title = "Harpoon Radius",
+    Default = "150",
+    Placeholder = "Masukkan angka radius...",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then
+            getgenv().W424_Sea.HarpoonRadius = num
+        end
+    end
+})
+
+-- TAB LOOT
+Tabs.Loot:AddToggle({
+    Title = "Auto Grab Floating Items / Wood",
+    Default = false,
+    Callback = function(state)
+        getgenv().W424_Sea.AutoCollect = state
+    end
+})
+
+-- TAB VISUALS
+local ESP_Holder = {}
+local function toggleESP(state, folderName, tag, color)
+    if not ESP_Holder[tag] then ESP_Holder[tag] = {} end
+    if state then
+        local folder = Workspace:FindFirstChild(folderName) or Workspace
+        for _, obj in ipairs(folder:GetDescendants()) do
+            if obj:IsA("Model") and obj ~= LocalPlayer.Character then
+                pcall(function()
+                    local hl = Instance.new("Highlight")
+                    hl.FillColor = color
+                    hl.OutlineColor = Color3.new(1, 1, 1)
+                    hl.FillTransparency = 0.5
+                    hl.Adornee = obj
+                    hl.Parent = CoreGui
+                    table.insert(ESP_Holder[tag], hl)
+                end)
+            end
+        end
+    else
+        for _, hl in ipairs(ESP_Holder[tag]) do
+            pcall(function() hl:Destroy() end)
+        end
+        ESP_Holder[tag] = {}
+    end
+end
+
+Tabs.Visuals:AddToggle({
+    Title = "Creatures / Sharks ESP",
+    Default = false,
+    Callback = function(state)
+        toggleESP(state, "Workspace", "creatures", Color3.fromRGB(255, 50, 50))
+    end
+})
+
+Tabs.Visuals:AddToggle({
+    Title = "Floating Items ESP",
+    Default = false,
+    Callback = function(state)
+        toggleESP(state, "Workspace", "items", Color3.fromRGB(50, 255, 50))
+    end
+})
+
+-- NOTIFIKASI BERHASIL LOAD
+OrvionLib:Notify("W424 Hub", "Berhasil dimuat menggunakan OrvionLib!", 4)
